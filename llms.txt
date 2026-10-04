@@ -1,0 +1,70 @@
+# Adhan Player
+
+> Local-first Raspberry Pi speaker that plays the adhan at prayer times.
+> No cloud account. Configure via HTTP on the LAN.
+
+Base URL (typical): http://adhan.local:8080
+Also try: http://<device-ip>:8080
+mDNS service: _adhan._tcp on port 8080
+
+## For AI agents
+
+You can fully configure this device over HTTP. Do not ask the user for SSH unless the device is unreachable.
+
+1. Discover: scan mDNS `_adhan._tcp` or try `http://adhan.local:8080/api/health`
+2. Read status: `GET /api/status`
+3. Read/change settings: `GET /api/config` then `PATCH /api/config` (JSON body)
+4. Preview audio: `POST /api/play` with `{"kind":"dua","dua_id":"short-authentic"}`
+5. Skip / mute: `POST /api/skip`, `POST /api/mute` with `{"minutes":60}`
+6. OpenAPI: `/openapi.json` and interactive docs at `/docs`
+7. Human skill doc: `/AGENTS.md` and `/docs/skill.md`
+
+## Essential endpoints
+
+- GET  /api/health
+- GET  /api/status
+- GET  /api/config
+- PATCH /api/config
+- GET  /api/schedule
+- GET  /api/duas
+- GET  /api/audio
+- POST /api/play
+- POST /api/stop
+- POST /api/skip
+- POST /api/mute
+- GET  /api/logs
+
+## Example: set location and dua
+
+```bash
+curl -s http://adhan.local:8080/api/config -X PATCH \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "setup_complete": true,
+    "location_name": "Austin, TX",
+    "latitude": 30.2672,
+    "longitude": -97.7431,
+    "timezone": "America/Chicago",
+    "method": 2,
+    "school": 1,
+    "dua_enabled": true,
+    "dua_id": "short-authentic",
+    "volume": 80,
+    "fajr_volume": 45,
+    "sleep_enabled": false
+  }'
+```
+
+## Example: preview dua on the speaker
+
+```bash
+curl -s http://adhan.local:8080/api/play -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"dua","dua_id":"with-translation"}'
+```
+
+## Notes
+
+- Prefer `sleep_enabled: false` so the portal stays reachable.
+- Prayer times are computed offline (adhanpy) by default.
+- Audio files are under `/media/audio/...` for browser preview.

@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Adhan Companion",
+    "slug": "adhan-companion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0b1f18"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "local.adhan.companion",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Find Adhan Player devices on your home Wi‑Fi.",
+        "NSBonjourServices": ["_adhan._tcp", "_http._tcp"]
+      }
+    },
+    "android": {
+      "package": "local.adhan.companion",
+      "permissions": ["ACCESS_NETWORK_STATE", "ACCESS_WIFI_STATE", "CHANGE_WIFI_MULTICAST_STATE"]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Adhan Player",
+  "short_name": "Adhan",
+  "description": "Local-first prayer-time speaker for your home",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1f18",
+  "theme_color": "#0f3d2e",
+  "icons": [
+    {
+      "src": "/assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

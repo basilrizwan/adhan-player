@@ -1,0 +1,21 @@
+venv/
+__pycache__/
+*.py[cod]
+.Python
+.DS_Store
+cache/
+.env
+.env.*
+mobile/AdhanCompanion/node_modules/
+mobile/AdhanCompanion/.expo/
+*.egg-info/
+dist/
+build/
+.idea/
+.vscode/
+
+# Large / user-specific audio (keep dua previews + small defaults)
+audio/kahf.mp3
+audio/adhan.prev.mp3
+audio/candidates/
+audio/*.wav

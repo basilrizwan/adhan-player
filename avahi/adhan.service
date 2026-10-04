@@ -1,0 +1,18 @@
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">Adhan Player on %h</name>
+  <service>
+    <type>_adhan._tcp</type>
+    <port>8080</port>
+    <txt-record>path=/</txt-record>
+    <txt-record>version=1.0.0</txt-record>
+    <txt-record>name=Adhan Player</txt-record>
+  </service>
+  <service>
+    <type>_http._tcp</type>
+    <port>8080</port>
+    <txt-record>path=/</txt-record>
+    <txt-record>version=1.0.0</txt-record>
+  </service>
+</service-group>

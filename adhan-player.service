@@ -1,0 +1,20 @@
+[Unit]
+Description=Adhan Prayer Time Player (local portal + scheduler)
+After=network-online.target sound.target avahi-daemon.service
+Wants=network-online.target avahi-daemon.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/adhan-player
+ExecStart=/home/pi/adhan-player/venv/bin/python -m app.main
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Allow sleep/wake power management (optional advanced mode)
+AmbientCapabilities=CAP_SYS_ADMIN
+SupplementaryGroups=audio
+
+[Install]
+WantedBy=multi-user.target
