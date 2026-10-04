@@ -81,6 +81,33 @@
     const setupBanner = $("#setupBanner");
     setupBanner.classList.toggle("hidden", !!cfg.setup_complete);
 
+    const wifi = st.wifi || {};
+    const wifiBanner = $("#wifiBanner");
+    if (wifi.hotspot_active || wifi.mode === "hotspot") {
+      wifiBanner.innerHTML = `Setup hotspot is on: join <strong>${wifi.hotspot_ssid || "Adhan-XXXX"}</strong> / <strong>${wifi.hotspot_password || "adhan-setup"}</strong>, then open <a href="/wifi">Wi‑Fi setup</a>.`;
+      wifiBanner.classList.remove("hidden");
+    } else if (wifi.mode === "offline") {
+      wifiBanner.innerHTML = `Not on Wi‑Fi yet. The device will start a setup hotspot shortly, or open the <a href="/wifi">Wi‑Fi setup page</a>.`;
+      wifiBanner.classList.remove("hidden");
+    } else {
+      wifiBanner.classList.add("hidden");
+    }
+
+    const wifiInfo = $("#wifiInfo");
+    if (wifiInfo) {
+      wifiInfo.textContent = [
+        `Mode: ${wifi.mode || "unknown"}`,
+        wifi.ssid ? `Connected: ${wifi.ssid}` : null,
+        wifi.hotspot_active
+          ? `Hotspot: ${wifi.hotspot_ssid} / ${wifi.hotspot_password}`
+          : `Setup hotspot SSID would be: ${wifi.hotspot_ssid || "Adhan-XXXX"}`,
+        `Online: ${wifi.online ? "yes" : "no"}`,
+        `Auto-hotspot when offline: ${cfg.wifi_hotspot_auto === false ? "off" : "on"}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+
     const times = sched.today || st.state?.today_times || {};
     const list = $("#todayList");
     list.innerHTML = Object.keys(times).length
@@ -275,6 +302,19 @@
       });
     }
   });
+
+  const btnHotspot = $("#btnStartHotspot");
+  if (btnHotspot) {
+    btnHotspot.onclick = async () => {
+      try {
+        await api("/api/wifi/hotspot", { method: "POST", body: "{}" });
+        await refresh();
+        alert("Setup hotspot started. Join it from your phone, then open the Wi‑Fi setup page.");
+      } catch (e) {
+        alert(e.message || "Could not start hotspot (needs NetworkManager on the Pi).");
+      }
+    };
+  }
 
   $("#btnSaveAdvanced").onclick = async () => {
     await patch({

@@ -13,8 +13,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api import router as api_router
+from app.captive import CaptivePortalMiddleware
 from app.config import AUDIO_DIR, BASE_DIR, CACHE_DIR, WEB_DIR, load_config
 from app.player import install_signal_handlers, request_shutdown, start_scheduler
+from app.wifi import start_wifi_watchdog, stop_wifi_watchdog
 
 CACHE_DIR.mkdir(exist_ok=True)
 LOG_FILE = CACHE_DIR / "adhan.log"
@@ -38,10 +40,12 @@ async def lifespan(app: FastAPI):
     install_signal_handlers()
     cfg = load_config()
     log.info("Adhan Player %s starting (setup_complete=%s)", __version__, cfg.get("setup_complete"))
+    start_wifi_watchdog()
     start_scheduler()
     try:
         yield
     finally:
+        stop_wifi_watchdog()
         request_shutdown()
         log.info("Adhan Player stopped")
 
@@ -51,12 +55,14 @@ app = FastAPI(
     description=(
         "Local-first Raspberry Pi adhan speaker. "
         "Configure via the web UI or this OpenAPI. "
-        "Discover on the LAN as http://adhan.local:8080"
+        "Discover on the LAN as http://adhan.local:8080. "
+        "If offline, joins setup hotspot Adhan-XXXX for phone Wi‑Fi onboarding."
     ),
     version=__version__,
     lifespan=lifespan,
 )
 
+app.add_middleware(CaptivePortalMiddleware)
 app.include_router(api_router)
 
 # Serve audio files for browser preview
@@ -103,6 +109,17 @@ def index():
     if index_path.exists():
         return FileResponse(index_path)
     return RedirectResponse("/docs")
+
+
+@app.get("/wifi")
+@app.get("/wifi.html")
+def wifi_setup_page():
+    path = WEB_DIR / "wifi.html"
+    if path.exists():
+        return FileResponse(path)
+    from fastapi import HTTPException
+
+    raise HTTPException(404, "Wi‑Fi setup page missing")
 
 
 @app.get("/manifest.json")

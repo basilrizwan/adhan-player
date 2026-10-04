@@ -11,6 +11,19 @@ Use this skill when the user wants to set up, move, mute, or change audio on a l
 
 ## Procedure
 
+### 0. Not on Wi‑Fi yet?
+
+Ask the user to join hotspot `Adhan-XXXX` / `adhan-setup`, then:
+
+```bash
+curl -s http://10.42.0.1:8080/api/wifi/setup-info
+curl -s http://10.42.0.1:8080/api/wifi/connect -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"ssid":"<home>","password":"<psk>"}'
+```
+
+Then continue on `http://adhan.local:8080` after the phone rejoins home Wi‑Fi.
+
 ### 1. Health check
 
 ```bash

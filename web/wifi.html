@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f3d2e" />
+  <title>Connect Adhan Player to Wi‑Fi</title>
+  <style>
+    :root {
+      --bg: #0b1f18;
+      --ink: #f4efe4;
+      --muted: #b7c7bc;
+      --accent: #d4a24c;
+      --accent-ink: #1a1205;
+      --line: rgba(244,239,228,0.14);
+      --danger: #e08a6a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 10% -10%, #245c45 0%, transparent 55%),
+        linear-gradient(165deg, #0b1f18, #143528 55%, #0e241c);
+      padding: 1.25rem;
+    }
+    main { max-width: 420px; margin: 0 auto; }
+    h1 { font-size: 1.75rem; letter-spacing: -0.03em; margin: 0 0 0.35rem; }
+    .lede { color: var(--muted); line-height: 1.45; margin: 0 0 1.25rem; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1rem;
+      background: rgba(0,0,0,0.22);
+      margin-bottom: 1rem;
+    }
+    .steps { color: var(--muted); font-size: 0.92rem; line-height: 1.5; margin: 0; padding-left: 1.1rem; }
+    label { display: grid; gap: 0.35rem; margin: 0.75rem 0; font-size: 0.92rem; }
+    input, select, button {
+      font: inherit;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 0.8rem 0.9rem;
+    }
+    input, select {
+      width: 100%;
+      background: rgba(0,0,0,0.28);
+      color: var(--ink);
+    }
+    button {
+      width: 100%;
+      border: none;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    button.ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      font-weight: 600;
+    }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    .status {
+      min-height: 1.25rem;
+      margin-top: 0.75rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+    }
+    .status.err { color: #ffd7c8; }
+    .status.ok { color: #b8e0c6; }
+    .ssid-chip {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: rgba(255,255,255,0.04);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      margin: 0.35rem 0;
+      font-weight: 500;
+    }
+    .meta { color: var(--muted); font-size: 0.8rem; }
+    code {
+      background: rgba(255,255,255,0.08);
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Connect to Wi‑Fi</h1>
+    <p class="lede">You’re on the Adhan Player setup network. Choose your home Wi‑Fi so the speaker can join the internet.</p>
+
+    <div class="card">
+      <ol class="steps">
+        <li>Pick your home network (or type the name)</li>
+        <li>Enter the Wi‑Fi password</li>
+        <li>Tap Connect — then switch <em>this phone</em> back to home Wi‑Fi</li>
+        <li>Open <code>http://adhan.local:8080</code></li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="row" style="display:flex; gap:0.5rem;">
+        <button type="button" class="ghost" id="btnScan" style="flex:1; margin-top:0;">Scan networks</button>
+      </div>
+      <div id="netList" style="margin-top:0.6rem;"></div>
+
+      <label>Network name (SSID)
+        <input id="ssid" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Home Wi‑Fi name" />
+      </label>
+      <label>Password
+        <input id="password" type="password" autocomplete="current-password" placeholder="Wi‑Fi password" />
+      </label>
+      <label style="display:flex; align-items:center; gap:0.5rem; grid-template-columns:none;">
+        <input id="hidden" type="checkbox" style="width:auto;" />
+        Hidden network
+      </label>
+      <button type="button" id="btnConnect">Connect</button>
+      <p class="status" id="status"></p>
+    </div>
+
+    <p class="meta" id="hotspotMeta"></p>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status");
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || "";
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    async function api(path, opts) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...opts,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
+      return data;
+    }
+
+    async function refreshMeta() {
+      try {
+        const info = await api("/api/wifi/setup-info");
+        $("hotspotMeta").textContent =
+          `Setup network: ${info.hotspot_ssid} · After connecting, open ${info.lan_url}`;
+        if (info.wifi && info.wifi.mode === "station" && info.wifi.ssid) {
+          setStatus(`Already on Wi‑Fi “${info.wifi.ssid}”. Open ${info.lan_url} from your home network.`, "ok");
+        }
+      } catch (e) {
+        $("hotspotMeta").textContent = "Could not read device Wi‑Fi status.";
+      }
+    }
+
+    async function scan() {
+      $("btnScan").disabled = true;
+      setStatus("Scanning… (may take a few seconds)");
+      try {
+        const data = await api("/api/wifi/networks");
+        const list = $("netList");
+        const nets = data.networks || [];
+        if (!nets.length) {
+          list.innerHTML = `<p class="meta">No networks found while in hotspot mode — type your SSID manually.</p>`;
+          setStatus("Enter your network name manually.", "");
+          return;
+        }
+        list.innerHTML = nets
+          .slice(0, 12)
+          .map(
+            (n) =>
+              `<button type="button" class="ssid-chip" data-ssid="${n.ssid.replace(/"/g, "&quot;")}">
+                <strong>${n.ssid}</strong>
+                <span class="meta"> · ${n.signal}%${n.security ? " · " + n.security : ""}</span>
+              </button>`
+          )
+          .join("");
+        list.querySelectorAll("[data-ssid]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            $("ssid").value = btn.getAttribute("data-ssid");
+          });
+        });
+        setStatus(`Found ${nets.length} network(s).`, "ok");
+      } catch (e) {
+        setStatus(e.message || "Scan failed — type SSID manually.", "err");
+      } finally {
+        $("btnScan").disabled = false;
+      }
+    }
+
+    $("btnConnect").addEventListener("click", async () => {
+      const ssid = $("ssid").value.trim();
+      const password = $("password").value;
+      if (!ssid) {
+        setStatus("Enter a network name.", "err");
+        return;
+      }
+      $("btnConnect").disabled = true;
+      setStatus(
+        "Connecting… the setup Wi‑Fi will drop in a moment.\n\nThen join your home Wi‑Fi and open http://adhan.local:8080",
+        ""
+      );
+      try {
+        const data = await api("/api/wifi/connect", {
+          method: "POST",
+          body: JSON.stringify({
+            ssid,
+            password: password || null,
+            hidden: $("hidden").checked,
+          }),
+        });
+        setStatus(data.message || "Connecting…", "ok");
+        // Poll briefly while still on hotspot; after drop the page will stall (expected)
+        for (let i = 0; i < 40; i++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          try {
+            const st = await api("/api/wifi");
+            const phase = st.connect && st.connect.phase;
+            if (phase === "succeeded") {
+              setStatus(
+                "Connected to “" +
+                  (st.ssid || ssid) +
+                  "”.\n\nSwitch this phone to your home Wi‑Fi, then open http://adhan.local:8080",
+                "ok"
+              );
+              break;
+            }
+            if (phase === "failed") {
+              setStatus(
+                (st.connect.error || "Connection failed") +
+                  "\n\nSetup hotspot should return — try again.",
+                "err"
+              );
+              break;
+            }
+          } catch (_) {
+            setStatus(
+              "Setup Wi‑Fi dropped (normal).\n\nJoin your home network, then open http://adhan.local:8080",
+              "ok"
+            );
+            break;
+          }
+        }
+      } catch (e) {
+        setStatus(
+          (e.message || "Connection failed") +
+            "\n\nThe setup hotspot should come back so you can try again.",
+          "err"
+        );
+      } finally {
+        $("btnConnect").disabled = false;
+        refreshMeta();
+      }
+    });
+
+    $("btnScan").addEventListener("click", scan);
+    refreshMeta();
+    // Auto-scan once; ignore failures (manual SSID always works)
+    scan().catch(() => {});
+  </script>
+</body>
+</html>

@@ -25,8 +25,23 @@ from app.dua import get_dua, list_duas
 from app.player import play_adhan, play_file, stop_playback
 from app.state import get_state, request_skip, set_mute_until, update_state
 from app.times import check_clock_health, get_today_times
+from app.wifi import (
+    connect_wifi_async,
+    hotspot_password,
+    hotspot_ssid,
+    scan_networks,
+    start_hotspot,
+    stop_hotspot,
+    wifi_status,
+)
 
 router = APIRouter(prefix="/api")
+
+
+class WifiConnectRequest(BaseModel):
+    ssid: str = Field(min_length=1, max_length=32)
+    password: Optional[str] = Field(default=None, max_length=128)
+    hidden: bool = False
 
 
 class ConfigPatch(BaseModel):
@@ -59,6 +74,9 @@ class ConfigPatch(BaseModel):
     kahf_isha_margin_minutes: Optional[int] = None
     use_offline_times: Optional[bool] = None
     aladhan_refresh: Optional[bool] = None
+    wifi_hotspot_auto: Optional[bool] = None
+    wifi_hotspot_password: Optional[str] = None
+    wifi_offline_wait_secs: Optional[int] = Field(default=None, ge=15, le=300)
 
 
 class PlayRequest(BaseModel):
@@ -141,6 +159,7 @@ def api_status() -> dict[str, Any]:
         "sleep_enabled": cfg.get("sleep_enabled", False),
         "dua_enabled": cfg.get("dua_enabled", True),
         "dua_id": cfg.get("dua_id"),
+        "wifi": wifi_status(),
     }
 
 
@@ -315,3 +334,66 @@ def api_logs(lines: int = 40) -> dict[str, Any]:
 def api_health() -> dict[str, Any]:
     clock_ok, warning = check_clock_health()
     return {"ok": True, "version": __version__, "clock_ok": clock_ok, "clock_warning": warning}
+
+
+@router.get("/wifi")
+def api_wifi() -> dict[str, Any]:
+    return wifi_status()
+
+
+@router.get("/wifi/networks")
+def api_wifi_networks() -> dict[str, Any]:
+    try:
+        nets = scan_networks(rescan=True)
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
+    return {"networks": nets, "wifi": wifi_status()}
+
+
+@router.post("/wifi/connect")
+def api_wifi_connect(req: WifiConnectRequest) -> dict[str, Any]:
+    """Start joining home Wi‑Fi (async). Poll GET /api/wifi until connect.phase is succeeded|failed."""
+    try:
+        status = connect_wifi_async(req.ssid, req.password, hidden=req.hidden)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
+    return {
+        "ok": True,
+        "wifi": status,
+        "message": (
+            "Connecting… this phone will lose the setup hotspot shortly. "
+            "Rejoin your home Wi‑Fi, then open http://adhan.local:8080"
+        ),
+    }
+
+
+@router.post("/wifi/hotspot")
+def api_wifi_hotspot_start() -> dict[str, Any]:
+    try:
+        return {"ok": True, "wifi": start_hotspot()}
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
+
+
+@router.delete("/wifi/hotspot")
+def api_wifi_hotspot_stop() -> dict[str, Any]:
+    try:
+        return {"ok": True, "wifi": stop_hotspot()}
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
+
+
+@router.get("/wifi/setup-info")
+def api_wifi_setup_info() -> dict[str, Any]:
+    """Safe info for stickers / QR / first-run cards (no secrets beyond setup PSK)."""
+    return {
+        "hotspot_ssid": hotspot_ssid(),
+        "hotspot_password": hotspot_password(),
+        "hotspot_url": "http://10.42.0.1:8080/wifi",
+        "lan_url": "http://adhan.local:8080",
+        "wifi": wifi_status(),
+    }

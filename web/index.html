@@ -23,6 +23,7 @@
         <button class="tab active" data-view="home">Home</button>
         <button class="tab" data-view="setup">Setup</button>
         <button class="tab" data-view="audio">Audio</button>
+        <button class="tab" data-view="wifi">Wi‑Fi</button>
         <button class="tab" data-view="advanced">Advanced</button>
       </nav>
     </header>
@@ -30,6 +31,7 @@
     <main>
       <section id="view-home" class="view active">
         <div id="clockWarn" class="banner warn hidden"></div>
+        <div id="wifiBanner" class="banner warn hidden"></div>
         <div id="setupBanner" class="banner hidden">
           First-time setup isn’t finished.
           <button type="button" class="linkish" data-goto="setup">Open setup</button>
@@ -137,6 +139,17 @@
         </label>
 
         <div id="duaList" class="dua-list"></div>
+      </section>
+
+      <section id="view-wifi" class="view">
+        <h1>Wi‑Fi</h1>
+        <p class="lede">If the Pi can’t join your home network, it starts a setup hotspot so you can configure Wi‑Fi from your phone — no display or SSH needed.</p>
+        <div class="card-plain" id="wifiInfo"></div>
+        <div class="row actions">
+          <a class="button-link" id="wifiSetupLink" href="/wifi">Open Wi‑Fi setup page</a>
+          <button type="button" id="btnStartHotspot" class="ghost">Start setup hotspot</button>
+        </div>
+        <p class="hint">LED cue on a Raspberry Pi: slow blink = waiting on setup hotspot; solid = online.</p>
       </section>
 
       <section id="view-advanced" class="view">

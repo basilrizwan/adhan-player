@@ -64,6 +64,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "kahf_isha_margin_minutes": 5,
     "use_offline_times": True,
     "aladhan_refresh": True,
+    "wifi_hotspot_auto": True,
+    "wifi_hotspot_password": "adhan-setup",
+    "wifi_offline_wait_secs": 75,
 }
 
 _lock = threading.RLock()

@@ -101,14 +101,16 @@ chmod +x "\$USER_HOME/adhan-player/setup.sh" "\$USER_HOME/adhan-player/scripts/"
 
 echo "Installing system packages..."
 apt-get update -qq
-apt-get install -y -qq mpv python3-venv curl avahi-daemon avahi-utils > /dev/null 2>&1
+apt-get install -y -qq mpv python3-venv curl avahi-daemon avahi-utils network-manager iptables > /dev/null 2>&1
+systemctl enable NetworkManager 2>/dev/null || true
+systemctl start NetworkManager 2>/dev/null || true
 
 echo "Setting up Python environment..."
 sudo -u ${PI_USER} python3 -m venv "\$USER_HOME/adhan-player/venv"
 sudo -u ${PI_USER} "\$USER_HOME/adhan-player/venv/bin/pip" install --upgrade pip -q
 sudo -u ${PI_USER} "\$USER_HOME/adhan-player/venv/bin/pip" install -r "\$USER_HOME/adhan-player/requirements.txt" -q
 
-echo "Applying power-saving settings (keeping Avahi)..."
+echo "Applying power-saving settings (keeping Avahi + NetworkManager)..."
 BOOT_CFG=""
 for cfg in /boot/firmware/config.txt /boot/config.txt; do
     [ -f "\$cfg" ] && BOOT_CFG="\$cfg" && break
@@ -131,10 +133,20 @@ if [ -d /etc/avahi/services ]; then
     systemctl restart avahi-daemon || true
 fi
 
-echo "${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake, /usr/bin/tvservice, /usr/bin/tee" \
-    > /etc/sudoers.d/adhan-player
+mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+cat > /etc/sudoers.d/adhan-player <<EOF
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/tvservice
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/iptables
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/mkdir
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/tee
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/rm
+EOF
 chmod 440 /etc/sudoers.d/adhan-player
-usermod -aG audio ${PI_USER} 2>/dev/null || true
+usermod -aG audio,netdev ${PI_USER} 2>/dev/null || true
 
 echo "Installing adhan-player service..."
 ADHAN_DEST="\$USER_HOME/adhan-player"
@@ -150,7 +162,8 @@ rm -f /etc/systemd/system/adhan-setup.service
 systemctl daemon-reload
 
 echo "[\$(date)] Adhan setup complete!"
-echo "Open http://adhan.local:8080"
+echo "If online: http://adhan.local:8080"
+echo "If offline: join Adhan-XXXX / adhan-setup then http://10.42.0.1:8080/wifi"
 SETUP_OUTER
 chmod +x "$BOOT_VOL/adhan-setup.sh"
 echo "  Done"
@@ -196,8 +209,11 @@ echo "  1. Eject the SD card"
 echo "  2. Insert into Raspberry Pi + speaker"
 echo "  3. Power on"
 echo ""
-echo "First boot: WiFi/SSH (Imager), reboot."
+echo "First boot: WiFi/SSH (Imager optional), reboot."
 echo "Second boot: Adhan player installs (~3-5 min)."
-echo "Then open: http://adhan.local:8080"
+echo ""
+echo "If Imager Wi‑Fi worked:  http://adhan.local:8080"
+echo "If not: phone joins Adhan-XXXX / adhan-setup → http://10.42.0.1:8080/wifi"
+echo "  (ACT LED slow-blinks while waiting on the setup hotspot)"
 echo ""
 echo "SSH: ssh ${PI_USER}@adhan.local"

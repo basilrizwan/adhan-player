@@ -33,5 +33,8 @@
   "kahf_length_minutes": 30,
   "kahf_isha_margin_minutes": 5,
   "use_offline_times": true,
-  "aladhan_refresh": true
+  "aladhan_refresh": true,
+  "wifi_hotspot_auto": true,
+  "wifi_hotspot_password": "adhan-setup",
+  "wifi_offline_wait_secs": 75
 }

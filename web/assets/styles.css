@@ -141,6 +141,16 @@ button.ghost {
   border: 1px solid var(--line);
 }
 
+a.button-link {
+  display: inline-block;
+  text-decoration: none;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
 button:active { transform: scale(0.98); }
 
 .volume-block, label {

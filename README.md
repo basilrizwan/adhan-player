@@ -11,7 +11,8 @@ No cloud account. Each home runs its own device.
 - Post-adhan dua catalog with browser + speaker preview
 - Mute / skip / test play / night (Fajr) volume
 - mDNS discovery (`_adhan._tcp`)
-- Optional Wi‑Fi setup hotspot helper
+- **Headless Wi‑Fi onboarding**: if offline, auto-starts `Adhan-XXXX` hotspot + captive `/wifi` page
+- ACT LED cues (slow blink = setup hotspot; solid = online)
 - Agent docs: [`llms.txt`](llms.txt), [`AGENTS.md`](AGENTS.md), [`docs/skill.md`](docs/skill.md), OpenAPI `/docs`
 - Thin Expo companion app under [`mobile/AdhanCompanion`](mobile/AdhanCompanion)
 
@@ -28,25 +29,36 @@ No cloud account. Each home runs its own device.
 ```
 
 4. Boot the Pi with a speaker attached  
-5. After ~3–5 minutes on the second boot, open **http://adhan.local:8080**
+5. After ~3–5 minutes on the second boot:
+
+**If Imager Wi‑Fi worked** → open **http://adhan.local:8080**
+
+**If not on a network** (no display needed):
+1. On your phone, join Wi‑Fi **`Adhan-XXXX`** (last 4 of the Pi MAC)  
+2. Password: **`adhan-setup`**  
+3. Open **http://10.42.0.1:8080/wifi** (or the captive “Sign in to network” sheet)  
+4. Pick/enter home Wi‑Fi → Connect  
+5. Switch the phone back to home Wi‑Fi → **http://adhan.local:8080**
+
+The ACT LED **slow-blinks** while the setup hotspot is waiting.
 
 ### B. Manual install over SSH
 
 ```bash
-git clone https://github.com/<you>/adhan-player.git
+git clone https://github.com/basilrizwan/adhan-player.git
 cd adhan-player
 ./setup.sh
 ```
 
-Then open `http://adhan.local:8080` and complete Setup.
+Then open `http://adhan.local:8080` (or use the hotspot flow above if offline).
 
-### No Wi‑Fi yet?
+### Force the setup hotspot
 
 ```bash
-sudo ./scripts/hotspot-setup.sh
+./scripts/hotspot-setup.sh --info
+./scripts/hotspot-setup.sh          # start
+./scripts/hotspot-setup.sh --stop   # stop
 ```
-
-Join `Adhan-XXXX` / `adhan-setup`, then open the portal IP shown (often `http://10.42.0.1:8080`).
 
 ## Local development (Mac)
 

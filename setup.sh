@@ -15,7 +15,13 @@ echo "User: $ACTUAL_USER"
 echo ""
 echo "[1/7] Installing system packages..."
 sudo apt update
-sudo apt install -y mpv python3-venv curl avahi-daemon avahi-utils
+sudo apt install -y mpv python3-venv curl avahi-daemon avahi-utils network-manager iptables
+
+# Prefer NetworkManager for Wi‑Fi / hotspot onboarding
+if systemctl list-unit-files | grep -q NetworkManager.service; then
+    sudo systemctl enable NetworkManager
+    sudo systemctl start NetworkManager || true
+fi
 
 # 2. Create Python virtual environment
 echo ""
@@ -41,23 +47,19 @@ echo ""
 echo "[4/7] Creating cache directory..."
 mkdir -p "$SCRIPT_DIR/cache"
 
-# 5. Power-saving (keep Avahi enabled for discovery)
+# 5. Power-saving (keep Avahi + NetworkManager)
 echo ""
-echo "[5/7] Applying power-saving settings (keeping Avahi)..."
+echo "[5/7] Applying power-saving settings (keeping Avahi + NetworkManager)..."
 
-if ! grep -q "dtoverlay=disable-bt" /boot/firmware/config.txt 2>/dev/null; then
-    echo "dtoverlay=disable-bt" | sudo tee -a /boot/firmware/config.txt > /dev/null
-    echo "  Disabled Bluetooth"
-fi
-
-if ! grep -q "gpu_mem=16" /boot/firmware/config.txt 2>/dev/null; then
-    echo "gpu_mem=16" | sudo tee -a /boot/firmware/config.txt > /dev/null
-    echo "  Reduced GPU memory to 16MB"
-fi
-
-if command -v iwconfig &>/dev/null; then
-    sudo iwconfig wlan0 power off 2>/dev/null || true
-    echo "  Disabled Wi-Fi power management"
+BOOT_CFG=""
+for cfg in /boot/firmware/config.txt /boot/config.txt; do
+    if [ -f "$cfg" ]; then BOOT_CFG="$cfg"; break; fi
+done
+if [ -n "$BOOT_CFG" ]; then
+    grep -q "dtoverlay=disable-bt" "$BOOT_CFG" 2>/dev/null || \
+        echo "dtoverlay=disable-bt" | sudo tee -a "$BOOT_CFG" > /dev/null
+    grep -q "gpu_mem=16" "$BOOT_CFG" 2>/dev/null || \
+        echo "gpu_mem=16" | sudo tee -a "$BOOT_CFG" > /dev/null
 fi
 
 # Do NOT disable avahi-daemon — needed for adhan.local discovery
@@ -76,10 +78,6 @@ sudo systemctl start avahi-daemon || true
 if [ "$(hostname)" != "adhan" ]; then
     echo "  Setting hostname to adhan (for http://adhan.local)"
     sudo hostnamectl set-hostname adhan || true
-    if ! grep -q "adhan" /etc/hosts 2>/dev/null; then
-        echo "10.0.0.1 adhan" | sudo tee -a /etc/hosts >/dev/null || true
-        # Prefer mapping via avahi; hosts line is best-effort
-    fi
 fi
 
 # Avahi service advertisement
@@ -90,12 +88,27 @@ if [ -d /etc/avahi/services ]; then
 fi
 
 sudo usermod -aG audio "$ACTUAL_USER" 2>/dev/null || true
+# Polkit-less nmcli from the service user
+sudo usermod -aG netdev "$ACTUAL_USER" 2>/dev/null || true
 
+# Passwordless sudo for power mgmt + Wi‑Fi/hotspot/captive redirects + LED
 SUDOERS_FILE="/etc/sudoers.d/adhan-player"
-echo "$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake, /usr/bin/tvservice, /usr/bin/tee /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor, /usr/bin/tee /sys/class/leds/ACT/brightness" \
-    | sudo tee "$SUDOERS_FILE" > /dev/null
+sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/tvservice
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/nmcli
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/iptables
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/mkdir
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/tee
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/rm
+EOF
 sudo chmod 440 "$SUDOERS_FILE"
-echo "  Configured passwordless sudo for optional power management"
+echo "  Configured passwordless sudo for power + Wi‑Fi onboarding"
+
+# Allow NetworkManager shared-mode dnsmasq drop-ins
+sudo mkdir -p /etc/NetworkManager/dnsmasq-shared.d
 
 # 6. Install systemd service
 echo ""
@@ -107,21 +120,31 @@ sudo systemctl daemon-reload
 sudo systemctl enable adhan-player
 sudo systemctl restart adhan-player
 
-# 7. Hotspot helper permissions
+# 7. Hotspot helper
 echo ""
 echo "[7/7] Hotspot helper..."
 chmod +x "$SCRIPT_DIR/scripts/hotspot-setup.sh" "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/prepare-sd.sh" 2>/dev/null || true
-echo "  If Wi-Fi was not set in Imager: sudo $SCRIPT_DIR/scripts/hotspot-setup.sh"
+
+SSID_SUFFIX=$(cat /sys/class/net/wlan0/address 2>/dev/null | tr -d ':' | tail -c 5 | tr '[:lower:]' '[:upper:]')
+SSID_SUFFIX="${SSID_SUFFIX:-XXXX}"
 
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Open the portal from a phone on the same Wi-Fi:"
-echo "  http://adhan.local:8080"
-echo "  (or http://<pi-ip>:8080)"
+echo "If the Pi has home Wi‑Fi (Imager or already joined):"
+echo "  Open http://adhan.local:8080"
+echo ""
+echo "If NOT on Wi‑Fi, the app auto-starts a setup hotspot (~75s):"
+echo "  1. On your phone, join Wi‑Fi:  Adhan-${SSID_SUFFIX}"
+echo "  2. Password:                  adhan-setup"
+echo "  3. Open:                      http://10.42.0.1:8080/wifi"
+echo "     (or wait for the captive “Sign in to network” prompt)"
+echo "  4. Enter home Wi‑Fi → Connect"
+echo "  5. Rejoin home Wi‑Fi on your phone → http://adhan.local:8080"
+echo ""
+echo "LED: slow blink = setup hotspot waiting; solid = online."
 echo ""
 echo "Useful commands:"
 echo "  Status:    sudo systemctl status adhan-player"
 echo "  Logs:      journalctl -u adhan-player -f"
-echo "  API docs:  http://adhan.local:8080/docs"
-echo "  Agent doc: http://adhan.local:8080/llms.txt"
+echo "  Hotspot:   $SCRIPT_DIR/scripts/hotspot-setup.sh --info"
