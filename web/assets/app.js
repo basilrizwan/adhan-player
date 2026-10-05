@@ -315,6 +315,7 @@
         .filter(Boolean)
         .join("\n");
     }
+  }
 
   async function refresh() {
     const [status, config, schedule, duas] = await Promise.all([
