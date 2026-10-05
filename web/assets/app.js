@@ -84,7 +84,7 @@
     const wifi = st.wifi || {};
     const wifiBanner = $("#wifiBanner");
     if (wifi.hotspot_active || wifi.mode === "hotspot") {
-      wifiBanner.innerHTML = `Setup hotspot is on: join <strong>${wifi.hotspot_ssid || "Adhan-XXXX"}</strong> / <strong>${wifi.hotspot_password || "adhan-setup"}</strong>, then open <a href="/wifi">Wi‑Fi setup</a>.`;
+      wifiBanner.innerHTML = `Setup hotspot is on: join <strong>${wifi.hotspot_ssid || "Adhan-XXXX"}</strong> (open network, no password), then open <a href="/wifi">Wi‑Fi setup</a>.`;
       wifiBanner.classList.remove("hidden");
     } else if (wifi.mode === "offline") {
       wifiBanner.innerHTML = `Not on Wi‑Fi yet. The device will start a setup hotspot shortly, or open the <a href="/wifi">Wi‑Fi setup page</a>.`;
@@ -99,8 +99,8 @@
         `Mode: ${wifi.mode || "unknown"}`,
         wifi.ssid ? `Connected: ${wifi.ssid}` : null,
         wifi.hotspot_active
-          ? `Hotspot: ${wifi.hotspot_ssid} / ${wifi.hotspot_password}`
-          : `Setup hotspot SSID would be: ${wifi.hotspot_ssid || "Adhan-XXXX"}`,
+          ? `Hotspot: ${wifi.hotspot_ssid} (open, no password)`
+          : `Setup hotspot SSID would be: ${wifi.hotspot_ssid || "Adhan-XXXX"} (open)`,
         `Online: ${wifi.online ? "yes" : "no"}`,
         `Auto-hotspot when offline: ${cfg.wifi_hotspot_auto === false ? "off" : "on"}`,
       ]

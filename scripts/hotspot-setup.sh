@@ -3,7 +3,7 @@
 # Usage:
 #   sudo ./scripts/hotspot-setup.sh          # start
 #   sudo ./scripts/hotspot-setup.sh --stop   # stop
-#   ./scripts/hotspot-setup.sh --info        # print SSID / password / URL
+#   ./scripts/hotspot-setup.sh --info        # print SSID / URL
 
 set -euo pipefail
 
@@ -26,9 +26,9 @@ PY
     ;;
   --info)
     "$PY" - <<'PY'
-from app.wifi import hotspot_password, hotspot_ssid, wifi_status
+from app.wifi import hotspot_ssid, wifi_status
 print(f"SSID:     {hotspot_ssid()}")
-print(f"Password: {hotspot_password()}")
+print(f"Password: (none — open network)")
 print(f"Setup:    http://10.42.0.1:8080/wifi")
 print(f"LAN:      http://adhan.local:8080")
 print(f"Status:   {wifi_status()}")

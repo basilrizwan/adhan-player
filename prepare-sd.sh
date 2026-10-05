@@ -173,7 +173,7 @@ systemctl daemon-reload
 
 echo "[\$(date)] Adhan setup complete!"
 echo "If online: http://adhan.local:8080"
-echo "If offline: join Adhan-XXXX / adhan-setup then http://10.42.0.1:8080/wifi"
+echo "If offline: join open SSID Adhan-XXXX (no password) then http://10.42.0.1:8080/wifi"
 SETUP_OUTER
 chmod +x "$BOOT_VOL/adhan-setup.sh"
 echo "  Done"
@@ -223,7 +223,7 @@ echo "First boot: WiFi/SSH (Imager optional), reboot."
 echo "Second boot: Adhan player installs (~3-5 min)."
 echo ""
 echo "If Imager Wi‑Fi worked:  http://adhan.local:8080"
-echo "If not: phone joins Adhan-XXXX / adhan-setup → http://10.42.0.1:8080/wifi"
+echo "If not: phone joins Adhan-XXXX (open, no password) → http://10.42.0.1:8080/wifi"
 echo "  (ACT LED slow-blinks while waiting on the setup hotspot)"
 echo ""
 echo "SSH: ssh ${PI_USER}@adhan.local"

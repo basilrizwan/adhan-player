@@ -68,7 +68,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "use_offline_times": True,
     "aladhan_refresh": True,
     "wifi_hotspot_auto": True,
-    "wifi_hotspot_password": "adhan-setup",
+    "wifi_hotspot_password": "",
     "wifi_offline_wait_secs": 75,
     "auto_update": True,
     "update_on_boot": True,

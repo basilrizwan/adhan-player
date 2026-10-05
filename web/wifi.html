@@ -155,7 +155,7 @@
       try {
         const info = await api("/api/wifi/setup-info");
         $("hotspotMeta").textContent =
-          `Setup network: ${info.hotspot_ssid} · After connecting, open ${info.lan_url}`;
+          `Setup network: ${info.hotspot_ssid} (open, no password) · After connecting, open ${info.lan_url}`;
         if (info.wifi && info.wifi.mode === "station" && info.wifi.ssid) {
           setStatus(`Already on Wi‑Fi “${info.wifi.ssid}”. Open ${info.lan_url} from your home network.`, "ok");
         }

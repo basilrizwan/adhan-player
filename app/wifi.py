@@ -14,7 +14,6 @@ from typing import Any
 log = logging.getLogger("adhan.wifi")
 
 HOTSPOT_CONN = "adhan-setup-hotspot"
-HOTSPOT_PASS_DEFAULT = "adhan-setup"
 SSID_PREFIX = "Adhan"
 HOTSPOT_IP = "10.42.0.1"
 
@@ -69,9 +68,8 @@ def hotspot_ssid() -> str:
 
 
 def hotspot_password() -> str:
-    from app.config import load_config
-
-    return load_config().get("wifi_hotspot_password") or HOTSPOT_PASS_DEFAULT
+    """Setup hotspot is open (no password) so phones can join without a sticker PSK."""
+    return ""
 
 
 def is_hotspot_active() -> bool:
@@ -230,11 +228,10 @@ def start_hotspot() -> dict[str, Any]:
         raise RuntimeError("NetworkManager (nmcli) is not installed")
 
     ssid = hotspot_ssid()
-    password = hotspot_password()
     dev = wifi_device() or "wlan0"
 
     with _lock:
-        log.info("Starting setup hotspot SSID=%s on %s", ssid, dev)
+        log.info("Starting open setup hotspot SSID=%s on %s", ssid, dev)
         _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", HOTSPOT_CONN])
         add = _run(
             _ensure_sudo_nmcli()
@@ -270,14 +267,34 @@ def start_hotspot() -> dict[str, Any]:
                 "bg",
                 "ipv4.method",
                 "shared",
-                "wifi-sec.key-mgmt",
-                "wpa-psk",
-                "wifi-sec.psk",
-                password,
             ]
         )
         if mod.returncode != 0:
             raise RuntimeError(mod.stderr.strip() or "Failed to configure hotspot")
+
+        # Open network — no WPA. Ignore failure if security keys were never set.
+        _run(
+            _ensure_sudo_nmcli()
+            + [
+                "nmcli",
+                "connection",
+                "modify",
+                HOTSPOT_CONN,
+                "remove",
+                "wifi-sec",
+            ]
+        )
+        _run(
+            _ensure_sudo_nmcli()
+            + [
+                "nmcli",
+                "connection",
+                "modify",
+                HOTSPOT_CONN,
+                "wifi-sec.key-mgmt",
+                "none",
+            ]
+        )
 
         up = _run(
             _ensure_sudo_nmcli() + ["nmcli", "connection", "up", HOTSPOT_CONN],
@@ -289,7 +306,7 @@ def start_hotspot() -> dict[str, Any]:
         _enable_captive_redirects()
         _write_dnsmasq_captive()
         set_led_mode("hotspot")
-        log.info("Hotspot up — join %s / %s then open http://%s:8080/wifi", ssid, password, HOTSPOT_IP)
+        log.info("Hotspot up — join open SSID %s then open http://%s:8080/wifi", ssid, HOTSPOT_IP)
         return wifi_status()
 
 

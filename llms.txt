@@ -21,7 +21,7 @@ You can fully configure this device over HTTP. Do not ask the user for SSH unles
 
 ## Headless Wi‑Fi onboarding
 
-If the device has no home Wi‑Fi, it auto-starts hotspot `Adhan-XXXX` / `adhan-setup`.
+If the device has no home Wi‑Fi, it auto-starts open hotspot `Adhan-XXXX` (no password).
 Phone joins that network → open `http://10.42.0.1:8080/wifi` → POST `/api/wifi/connect`.
 Then the phone rejoins home Wi‑Fi and uses `http://adhan.local:8080`.
 

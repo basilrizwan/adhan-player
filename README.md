@@ -34,11 +34,10 @@ No cloud account. Each home runs its own device.
 **If Imager Wi‑Fi worked** → open **http://adhan.local:8080**
 
 **If not on a network** (no display needed):
-1. On your phone, join Wi‑Fi **`Adhan-XXXX`** (last 4 of the Pi MAC)  
-2. Password: **`adhan-setup`**  
-3. Open **http://10.42.0.1:8080/wifi** (or the captive “Sign in to network” sheet)  
-4. Pick/enter home Wi‑Fi → Connect  
-5. Switch the phone back to home Wi‑Fi → **http://adhan.local:8080**
+1. On your phone, join Wi‑Fi **`Adhan-XXXX`** (last 4 of the Pi MAC — **open, no password**)  
+2. Open **http://10.42.0.1:8080/wifi** (or the captive “Sign in to network” sheet)  
+3. Pick/enter home Wi‑Fi → Connect  
+4. Switch the phone back to home Wi‑Fi → **http://adhan.local:8080**
 
 The ACT LED **slow-blinks** while the setup hotspot is waiting.
 

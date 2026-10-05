@@ -14,7 +14,7 @@ The device is a Raspberry Pi (or compatible) running a FastAPI app on port **808
 1. Try `http://adhan.local:8080/api/health`
 2. Or scan mDNS for `_adhan._tcp`
 3. Or ask the user for the IP shown on first-run / QR in the web UI
-4. If the device was never on Wi‑Fi: tell the user to join hotspot `Adhan-XXXX` / `adhan-setup`, then open `http://10.42.0.1:8080/wifi`
+4. If the device was never on Wi‑Fi: tell the user to join open hotspot `Adhan-XXXX` (no password), then open `http://10.42.0.1:8080/wifi`
 
 ## Wi‑Fi (headless)
 

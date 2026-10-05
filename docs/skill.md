@@ -13,7 +13,7 @@ Use this skill when the user wants to set up, move, mute, or change audio on a l
 
 ### 0. Not on Wi‑Fi yet?
 
-Ask the user to join hotspot `Adhan-XXXX` / `adhan-setup`, then:
+Ask the user to join open hotspot `Adhan-XXXX` (no password), then:
 
 ```bash
 curl -s http://10.42.0.1:8080/api/wifi/setup-info

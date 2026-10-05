@@ -28,7 +28,6 @@ from app.times import check_clock_health, get_today_times
 from app.updater import apply_update_async, check_for_updates, status as update_status
 from app.wifi import (
     connect_wifi_async,
-    hotspot_password,
     hotspot_ssid,
     scan_networks,
     start_hotspot,
@@ -402,10 +401,10 @@ def api_wifi_hotspot_stop() -> dict[str, Any]:
 
 @router.get("/wifi/setup-info")
 def api_wifi_setup_info() -> dict[str, Any]:
-    """Safe info for stickers / QR / first-run cards (no secrets beyond setup PSK)."""
+    """Safe info for stickers / QR / first-run cards. Setup hotspot is open (no PSK)."""
     return {
         "hotspot_ssid": hotspot_ssid(),
-        "hotspot_password": hotspot_password(),
+        "hotspot_password": "",
         "hotspot_url": "http://10.42.0.1:8080/wifi",
         "lan_url": "http://adhan.local:8080",
         "wifi": wifi_status(),
