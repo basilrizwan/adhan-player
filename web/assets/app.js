@@ -123,6 +123,28 @@
       .filter(Boolean)
       .join("\n");
 
+    const bookmarkHint = $("#bookmarkHint");
+    if (bookmarkHint) {
+      const ua = navigator.userAgent || "";
+      const isIos = /iPad|iPhone|iPod/.test(ua);
+      const isAndroid = /Android/i.test(ua);
+      const isStandalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        navigator.standalone === true;
+      if (isStandalone) {
+        bookmarkHint.textContent = "Nice — you’re using the installed home-screen app.";
+      } else if (isIos) {
+        bookmarkHint.textContent =
+          "On iPhone/iPad: tap Share → Add to Home Screen for one-tap access later.";
+      } else if (isAndroid) {
+        bookmarkHint.textContent =
+          "On Android: tap the browser menu → Install app / Add to Home screen.";
+      } else {
+        bookmarkHint.textContent =
+          "On a laptop: bookmark http://adhan.local:8080 for quick access next time.";
+      }
+    }
+
     const vol = cfg.volume ?? 80;
     $("#volume").value = vol;
     $("#volVal").textContent = vol;

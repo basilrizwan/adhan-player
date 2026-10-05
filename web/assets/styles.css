@@ -206,6 +206,27 @@ input[type="range"] { width: 100%; }
   color: #ffd7c8;
 }
 
+.access-card {
+  margin-top: 0.25rem;
+  margin-bottom: 1.25rem;
+}
+.access-card p { margin: 0.35rem 0; line-height: 1.45; }
+.access-title {
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 0 !important;
+}
+.access-card a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.access-card a:hover { text-decoration: underline; }
+.access-card code {
+  background: rgba(255,255,255,0.08);
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
+
 .hidden { display: none !important; }
 
 .card-plain {

@@ -95,14 +95,18 @@
 <body>
   <main>
     <h1>Connect to Wi‑Fi</h1>
-    <p class="lede">You’re on the Adhan Player setup network. Choose your home Wi‑Fi so the speaker can join the internet.</p>
+    <p class="lede">You’re on the Adhan Player setup network. Choose your home Wi‑Fi so the speaker can join it.</p>
 
     <div class="card">
+      <p class="meta" style="margin:0 0 0.75rem;">
+        Most phones open this page automatically (“Sign in to network”). If yours didn’t, open
+        <code>http://10.42.0.1:8080/wifi</code> in the browser.
+      </p>
       <ol class="steps">
         <li>Pick your home network (or type the name)</li>
         <li>Enter the Wi‑Fi password</li>
         <li>Tap Connect — then switch <em>this phone</em> back to home Wi‑Fi</li>
-        <li>Open <code>http://adhan.local:8080</code></li>
+        <li>Open <code>http://adhan.local:8080</code> — bookmark it (or Add to Home Screen on a phone)</li>
       </ol>
     </div>
 
@@ -227,7 +231,7 @@
               setStatus(
                 "Connected to “" +
                   (st.ssid || ssid) +
-                  "”.\n\nSwitch this phone to your home Wi‑Fi, then open http://adhan.local:8080",
+                  "”.\n\nSwitch this phone to your home Wi‑Fi, then open http://adhan.local:8080\n\nTip: bookmark that page, or Add to Home Screen on a phone.",
                 "ok"
               );
               break;
@@ -242,7 +246,7 @@
             }
           } catch (_) {
             setStatus(
-              "Setup Wi‑Fi dropped (normal).\n\nJoin your home network, then open http://adhan.local:8080",
+              "Setup Wi‑Fi dropped (normal).\n\nJoin your home network, then open http://adhan.local:8080\n\nTip: bookmark that page, or Add to Home Screen on a phone.",
               "ok"
             );
             break;
