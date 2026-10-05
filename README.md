@@ -123,7 +123,7 @@ app/           FastAPI + scheduler + offline times
 web/           Portal PWA
 audio/dua/     Dua preview clips
 avahi/         mDNS service file
-scripts/       Hotspot helper
+scripts/       Hotspot helper + git auto-update
 mobile/        Expo companion shell
 docs/skill.md  Agent skill
 ```

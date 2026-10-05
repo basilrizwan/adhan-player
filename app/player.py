@@ -231,6 +231,25 @@ def play_file(
         )
 
 
+def play_boot_sound(config: dict[str, Any] | None = None) -> None:
+    """Short confirmation that the speaker came up — never the full adhan."""
+    cfg = config or load_config()
+    kind = (cfg.get("boot_sound") or "chime").lower()
+    if kind in {"off", "none", "silent", "false"}:
+        log.info("Boot sound disabled")
+        return
+    if kind == "adhan":
+        play_adhan("Boot", cfg)
+        return
+    audio_file = cfg.get("boot_audio_file") or "audio/boot-chime.mp3"
+    path = BASE_DIR / audio_file if not str(audio_file).startswith("/") else Path(audio_file)
+    if not path.exists():
+        log.warning("Boot sound missing (%s) — skipping", path)
+        return
+    vol = int(cfg.get("boot_volume", 45))
+    play_file(path, label="Boot chime", volume=vol, config=cfg, timeout=30)
+
+
 def play_adhan(prayer_name: str, config: dict[str, Any] | None = None) -> None:
     cfg = config or load_config()
     is_kahf = prayer_name == "Kahf"
@@ -250,8 +269,8 @@ def play_adhan(prayer_name: str, config: dict[str, Any] | None = None) -> None:
     volume = _volume_for(prayer_name, cfg)
     play_file(audio_file, label=label, volume=volume, config=cfg, timeout=timeout)
 
-    # Post-adhan dua (never after Kahf)
-    if not is_kahf and cfg.get("dua_enabled", True) and prayer_name in PRAYER_NAMES + ["Test", "Boot"]:
+    # Post-adhan dua (never after Kahf or boot chime)
+    if not is_kahf and cfg.get("dua_enabled", True) and prayer_name in PRAYER_NAMES + ["Test"]:
         delay = float(cfg.get("dua_delay_seconds", 2))
         if delay > 0 and not _shutdown.is_set():
             time.sleep(delay)
@@ -368,7 +387,7 @@ def scheduler_loop() -> None:
     )
 
     if config.get("play_on_boot", False):
-        play_adhan("Boot", config)
+        play_boot_sound(config)
 
     last_refresh_date = None
 

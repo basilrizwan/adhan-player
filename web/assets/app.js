@@ -195,7 +195,7 @@
     $("#kahfEnabled").checked = !!c.kahf_enabled;
     $("#sleepEnabled").checked = !!c.sleep_enabled;
     $("#offlineTimes").checked = c.use_offline_times !== false;
-    $("#playOnBoot").checked = !!c.play_on_boot;
+    $("#playOnBoot").checked = c.play_on_boot !== false;
     const autoEl = $("#autoUpdate");
     if (autoEl) autoEl.checked = c.auto_update !== false;
     const info = $("#updateInfo");
@@ -338,6 +338,7 @@
       sleep_enabled: $("#sleepEnabled").checked,
       use_offline_times: $("#offlineTimes").checked,
       play_on_boot: $("#playOnBoot").checked,
+      boot_sound: $("#playOnBoot").checked ? "chime" : "off",
       auto_update: $("#autoUpdate") ? $("#autoUpdate").checked : true,
       update_on_boot: $("#autoUpdate") ? $("#autoUpdate").checked : true,
       update_at_midnight: $("#autoUpdate") ? $("#autoUpdate").checked : true,

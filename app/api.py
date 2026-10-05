@@ -22,7 +22,7 @@ from app.config import (
     update_config,
 )
 from app.dua import get_dua, list_duas
-from app.player import play_adhan, play_file, stop_playback
+from app.player import play_adhan, play_boot_sound, play_file, stop_playback
 from app.state import get_state, request_skip, set_mute_until, update_state
 from app.times import check_clock_health, get_today_times
 from app.updater import apply_update_async, check_for_updates, status as update_status
@@ -62,6 +62,9 @@ class ConfigPatch(BaseModel):
     audio_output: Optional[str] = None
     sleep_enabled: Optional[bool] = None
     play_on_boot: Optional[bool] = None
+    boot_sound: Optional[str] = None
+    boot_audio_file: Optional[str] = None
+    boot_volume: Optional[int] = Field(default=None, ge=0, le=100)
     dua_enabled: Optional[bool] = None
     dua_id: Optional[str] = None
     dua_audio_file: Optional[str] = None
@@ -248,6 +251,9 @@ def api_play(req: PlayRequest) -> dict[str, Any]:
     if kind == "test":
         _bg(play_adhan, "Test", cfg)
         return {"ok": True, "playing": "test"}
+    if kind == "boot":
+        _bg(play_boot_sound, cfg)
+        return {"ok": True, "playing": "boot"}
     if kind == "adhan":
         _bg(
             play_file,
