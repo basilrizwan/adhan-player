@@ -196,7 +196,22 @@
     $("#sleepEnabled").checked = !!c.sleep_enabled;
     $("#offlineTimes").checked = c.use_offline_times !== false;
     $("#playOnBoot").checked = !!c.play_on_boot;
-  }
+    const autoEl = $("#autoUpdate");
+    if (autoEl) autoEl.checked = c.auto_update !== false;
+    const info = $("#updateInfo");
+    const u = (state.status && state.status.update) || {};
+    if (info) {
+      const local = (u.local_commit || "—").slice(0, 8);
+      const remote = (u.remote_commit || "—").slice(0, 8);
+      info.textContent = [
+        `App ${state.status?.version || ""} · git ${local}`,
+        u.update_available ? `Update available (${remote})` : "Up to date with GitHub (or not checked yet)",
+        u.next_midnight ? `Next midnight check: ${u.next_midnight}` : null,
+        u.last_error ? `Last error: ${u.last_error}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
 
   async function refresh() {
     const [status, config, schedule, duas] = await Promise.all([
@@ -323,9 +338,41 @@
       sleep_enabled: $("#sleepEnabled").checked,
       use_offline_times: $("#offlineTimes").checked,
       play_on_boot: $("#playOnBoot").checked,
+      auto_update: $("#autoUpdate") ? $("#autoUpdate").checked : true,
+      update_on_boot: $("#autoUpdate") ? $("#autoUpdate").checked : true,
+      update_at_midnight: $("#autoUpdate") ? $("#autoUpdate").checked : true,
     });
     alert("Advanced settings saved.");
   };
+
+  const btnCheck = $("#btnCheckUpdate");
+  if (btnCheck) {
+    btnCheck.onclick = async () => {
+      try {
+        const st = await api("/api/update/check", { method: "POST", body: "{}" });
+        state.status = state.status || {};
+        state.status.update = st;
+        fillAdvanced();
+        alert(st.update_available ? "An update is available. Tap Update now." : "Already up to date.");
+      } catch (e) {
+        alert(e.message || "Check failed (needs internet + git).");
+      }
+    };
+  }
+  const btnApply = $("#btnApplyUpdate");
+  if (btnApply) {
+    btnApply.onclick = async () => {
+      if (!confirm("Update from GitHub now? Settings and your adhan audio are kept. The portal may restart.")) {
+        return;
+      }
+      try {
+        const res = await api("/api/update", { method: "POST", body: JSON.stringify({ apply: true }) });
+        alert(res.message || "Update started.");
+      } catch (e) {
+        alert(e.message || "Update failed.");
+      }
+    };
+  }
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

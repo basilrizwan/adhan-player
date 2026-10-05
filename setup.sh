@@ -15,7 +15,7 @@ echo "User: $ACTUAL_USER"
 echo ""
 echo "[1/7] Installing system packages..."
 sudo apt update
-sudo apt install -y mpv python3-venv curl avahi-daemon avahi-utils network-manager iptables
+sudo apt install -y mpv python3-venv curl git avahi-daemon avahi-utils network-manager iptables
 
 # Prefer NetworkManager for Wi‑Fi / hotspot onboarding
 if systemctl list-unit-files | grep -q NetworkManager.service; then
@@ -102,6 +102,9 @@ $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/mkdir
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/tee
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart adhan-player
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl try-restart adhan-player
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/rm
 EOF
 sudo chmod 440 "$SUDOERS_FILE"
@@ -120,10 +123,19 @@ sudo systemctl daemon-reload
 sudo systemctl enable adhan-player
 sudo systemctl restart adhan-player
 
+# Nightly + boot git updates
+sed "s|User=pi|User=$ACTUAL_USER|g; s|/home/pi/adhan-player|$SCRIPT_DIR|g" \
+    "$SCRIPT_DIR/adhan-update.service" | sudo tee /etc/systemd/system/adhan-update.service > /dev/null
+sudo cp "$SCRIPT_DIR/adhan-update.timer" /etc/systemd/system/adhan-update.timer
+sudo systemctl daemon-reload
+sudo systemctl enable adhan-update.service
+sudo systemctl enable --now adhan-update.timer
+echo "  Enabled boot + 00:08 auto-update timer"
+
 # 7. Hotspot helper
 echo ""
 echo "[7/7] Hotspot helper..."
-chmod +x "$SCRIPT_DIR/scripts/hotspot-setup.sh" "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/prepare-sd.sh" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/scripts/hotspot-setup.sh" "$SCRIPT_DIR/scripts/update.sh" "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/prepare-sd.sh" 2>/dev/null || true
 
 SSID_SUFFIX=$(cat /sys/class/net/wlan0/address 2>/dev/null | tr -d ':' | tail -c 5 | tr '[:lower:]' '[:upper:]')
 SSID_SUFFIX="${SSID_SUFFIX:-XXXX}"

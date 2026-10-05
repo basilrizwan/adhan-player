@@ -24,6 +24,16 @@ curl -s http://10.42.0.1:8080/api/wifi/connect -X POST \
 
 Then continue on `http://adhan.local:8080` after the phone rejoins home Wi‑Fi.
 
+### Updates
+
+```bash
+curl -s http://adhan.local:8080/api/update
+curl -s http://adhan.local:8080/api/update -X POST \
+  -H 'Content-Type: application/json' -d '{"apply":true}'
+```
+
+Devices auto-check GitHub on boot and ~00:08. Keep `auto_update` true unless the user opts out.
+
 ### 1. Health check
 
 ```bash

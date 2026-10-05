@@ -28,6 +28,15 @@ curl -s http://10.42.0.1:8080/api/wifi/connect -X POST \
 
 Keep `wifi_hotspot_auto` true unless the user opts out.
 
+## Updates
+
+Keep `auto_update` true. Devices check GitHub `main` on boot and ~00:08 local.
+
+```bash
+curl -s http://adhan.local:8080/api/update
+curl -s http://adhan.local:8080/api/update -X POST -H 'Content-Type: application/json' -d '{"apply":true}'
+```
+
 ## Typical setup flow
 
 1. `GET /api/status` — check `setup_complete`, clock health, URLs
@@ -51,6 +60,7 @@ Keep `wifi_hotspot_auto` true unless the user opts out.
 | `audio_output` | auto / hdmi / headphone |
 | `sleep_enabled` | Advanced; disables portal while asleep |
 | `kahf_enabled` | Thursday Surah Kahf after Maghrib |
+| `auto_update` | Pull GitHub `main` on boot and ~00:08 |
 
 ## Safety
 

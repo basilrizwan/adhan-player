@@ -1,0 +1,17 @@
+[Unit]
+Description=Adhan Player git auto-update
+After=network-online.target adhan-player.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/adhan-player
+ExecStart=/bin/bash /home/pi/adhan-player/scripts/update.sh --no-restart
+ExecStartPost=/bin/bash -c 'sudo -n systemctl try-restart adhan-player || true'
+Environment=PYTHONUNBUFFERED=1
+Environment=ADHAN_UNATTENDED=1
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

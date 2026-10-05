@@ -171,6 +171,15 @@
           <input type="checkbox" id="playOnBoot" />
           Play adhan on boot
         </label>
+        <label class="toggle">
+          <input type="checkbox" id="autoUpdate" />
+          Auto-update from GitHub (boot + ~12:08am)
+        </label>
+        <div class="card-plain" id="updateInfo"></div>
+        <div class="row actions">
+          <button type="button" id="btnCheckUpdate" class="ghost">Check for update</button>
+          <button type="button" id="btnApplyUpdate">Update now</button>
+        </div>
         <div class="row actions">
           <button type="button" id="btnSaveAdvanced">Save</button>
         </div>

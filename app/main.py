@@ -17,6 +17,7 @@ from app.captive import CaptivePortalMiddleware
 from app.config import AUDIO_DIR, BASE_DIR, CACHE_DIR, WEB_DIR, load_config
 from app.player import install_signal_handlers, request_shutdown, start_scheduler
 from app.wifi import start_wifi_watchdog, stop_wifi_watchdog
+from app.updater import start_updater, stop_updater
 
 CACHE_DIR.mkdir(exist_ok=True)
 LOG_FILE = CACHE_DIR / "adhan.log"
@@ -41,10 +42,12 @@ async def lifespan(app: FastAPI):
     cfg = load_config()
     log.info("Adhan Player %s starting (setup_complete=%s)", __version__, cfg.get("setup_complete"))
     start_wifi_watchdog()
+    start_updater()
     start_scheduler()
     try:
         yield
     finally:
+        stop_updater()
         stop_wifi_watchdog()
         request_shutdown()
         log.info("Adhan Player stopped")

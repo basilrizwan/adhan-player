@@ -25,6 +25,7 @@ from app.dua import get_dua, list_duas
 from app.player import play_adhan, play_file, stop_playback
 from app.state import get_state, request_skip, set_mute_until, update_state
 from app.times import check_clock_health, get_today_times
+from app.updater import apply_update_async, check_for_updates, status as update_status
 from app.wifi import (
     connect_wifi_async,
     hotspot_password,
@@ -77,6 +78,11 @@ class ConfigPatch(BaseModel):
     wifi_hotspot_auto: Optional[bool] = None
     wifi_hotspot_password: Optional[str] = None
     wifi_offline_wait_secs: Optional[int] = Field(default=None, ge=15, le=300)
+    auto_update: Optional[bool] = None
+    update_on_boot: Optional[bool] = None
+    update_at_midnight: Optional[bool] = None
+    update_repo: Optional[str] = None
+    update_branch: Optional[str] = None
 
 
 class PlayRequest(BaseModel):
@@ -160,6 +166,7 @@ def api_status() -> dict[str, Any]:
         "dua_enabled": cfg.get("dua_enabled", True),
         "dua_id": cfg.get("dua_id"),
         "wifi": wifi_status(),
+        "update": update_status(),
     }
 
 
@@ -396,4 +403,35 @@ def api_wifi_setup_info() -> dict[str, Any]:
         "hotspot_url": "http://10.42.0.1:8080/wifi",
         "lan_url": "http://adhan.local:8080",
         "wifi": wifi_status(),
+    }
+
+
+class UpdateRequest(BaseModel):
+    apply: bool = True
+    force: bool = False
+
+
+@router.get("/update")
+def api_update_status() -> dict[str, Any]:
+    return update_status()
+
+
+@router.post("/update/check")
+def api_update_check() -> dict[str, Any]:
+    return check_for_updates()
+
+
+@router.post("/update")
+def api_update_apply(req: UpdateRequest | None = None) -> dict[str, Any]:
+    body = req or UpdateRequest()
+    if not body.apply:
+        return check_for_updates()
+    try:
+        st = apply_update_async(force=body.force)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    return {
+        "ok": True,
+        "update": st,
+        "message": "Update started. The portal may restart in a few seconds.",
     }

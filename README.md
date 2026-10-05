@@ -97,7 +97,24 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
 
 - **`sleep_enabled: false`** so the portal stays online (hardware sleep makes the UI unreachable)
 - Avahi/mDNS is **enabled** for `adhan.local`
-- Dua defaults to `short-authentic` — preview others under **Audio** and pick one
+## Auto-update
+
+The Pi pulls `main` from [github.com/basilrizwan/adhan-player](https://github.com/basilrizwan/adhan-player) **on boot** (after ~90s) and **around 12:08am** local time. `config.json` and your adhan/fajr/kahf files are kept.
+
+Portal → Advanced → **Update now**, or:
+
+```bash
+curl -s http://adhan.local:8080/api/update -X POST \
+  -H 'Content-Type: application/json' -d '{"apply":true}'
+```
+
+Turn off with `"auto_update": false` in config / Advanced.
+
+**Existing Pi (one-time, until auto-update is installed):**
+
+```bash
+curl -sL https://raw.githubusercontent.com/basilrizwan/adhan-player/main/scripts/bootstrap-update.sh | bash
+```
 
 ## Project layout
 

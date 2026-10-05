@@ -101,7 +101,7 @@ chmod +x "\$USER_HOME/adhan-player/setup.sh" "\$USER_HOME/adhan-player/scripts/"
 
 echo "Installing system packages..."
 apt-get update -qq
-apt-get install -y -qq mpv python3-venv curl avahi-daemon avahi-utils network-manager iptables > /dev/null 2>&1
+apt-get install -y -qq mpv python3-venv curl git avahi-daemon avahi-utils network-manager iptables > /dev/null 2>&1
 systemctl enable NetworkManager 2>/dev/null || true
 systemctl start NetworkManager 2>/dev/null || true
 
@@ -141,6 +141,9 @@ ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/iptables
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart adhan-player
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl try-restart adhan-player
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/mkdir
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/tee
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/rm
@@ -155,6 +158,13 @@ sed "s|User=pi|User=${PI_USER}|g; s|/home/pi/adhan-player|\$ADHAN_DEST|g" \
 systemctl daemon-reload
 systemctl enable adhan-player
 systemctl start adhan-player
+
+sed "s|User=pi|User=${PI_USER}|g; s|/home/pi/adhan-player|\$ADHAN_DEST|g" \
+    "\$ADHAN_DEST/adhan-update.service" > /etc/systemd/system/adhan-update.service
+cp "\$ADHAN_DEST/adhan-update.timer" /etc/systemd/system/adhan-update.timer
+systemctl daemon-reload
+systemctl enable adhan-update.service
+systemctl enable --now adhan-update.timer
 
 echo "Cleaning up..."
 rm -rf /boot/firmware/adhan-player /boot/adhan-player 2>/dev/null || true

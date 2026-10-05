@@ -67,6 +67,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "wifi_hotspot_auto": True,
     "wifi_hotspot_password": "adhan-setup",
     "wifi_offline_wait_secs": 75,
+    "auto_update": True,
+    "update_on_boot": True,
+    "update_at_midnight": True,
+    "update_repo": "https://github.com/basilrizwan/adhan-player.git",
+    "update_branch": "main",
 }
 
 _lock = threading.RLock()

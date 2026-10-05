@@ -36,5 +36,10 @@
   "aladhan_refresh": true,
   "wifi_hotspot_auto": true,
   "wifi_hotspot_password": "adhan-setup",
-  "wifi_offline_wait_secs": 75
+  "wifi_offline_wait_secs": 75,
+  "auto_update": true,
+  "update_on_boot": true,
+  "update_at_midnight": true,
+  "update_repo": "https://github.com/basilrizwan/adhan-player.git",
+  "update_branch": "main"
 }

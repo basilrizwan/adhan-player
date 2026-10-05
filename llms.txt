@@ -45,6 +45,19 @@ Then the phone rejoins home Wi‑Fi and uses `http://adhan.local:8080`.
 - POST /api/wifi/hotspot
 - DELETE /api/wifi/hotspot
 - GET  /api/wifi/setup-info
+- GET  /api/update
+- POST /api/update/check
+- POST /api/update
+
+## Updates
+
+Devices pull `main` from `https://github.com/basilrizwan/adhan-player.git` on boot (~90s after start) and around 00:08 local time. Settings (`config.json`) and custom adhan files are preserved.
+
+```bash
+curl -s http://adhan.local:8080/api/update
+curl -s http://adhan.local:8080/api/update -X POST \
+  -H 'Content-Type: application/json' -d '{"apply":true}'
+```
 
 ## Example: set location and dua
 
