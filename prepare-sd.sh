@@ -138,6 +138,7 @@ cat > /etc/sudoers.d/adhan-player <<EOF
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/tvservice
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/iw
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/iptables
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager

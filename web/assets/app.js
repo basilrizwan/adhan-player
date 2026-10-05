@@ -21,6 +21,22 @@
     return res.json();
   }
 
+  let setupStep = 1;
+
+  function showSetupStep(n) {
+    setupStep = n;
+    $$("#view-setup .setup-step").forEach((el) => {
+      el.classList.toggle("active", Number(el.dataset.step) === n);
+    });
+    const progress = $("#setupProgress");
+    const title = $("#setupTitle");
+    if (progress) progress.textContent = `Step ${n} of 4`;
+    if (title) {
+      title.textContent =
+        n === 1 ? "Welcome" : n === 2 ? "Your location" : n === 3 ? "Prayer times" : "Sound";
+    }
+  }
+
   function showView(name) {
     $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
     $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
@@ -80,6 +96,13 @@
 
     const setupBanner = $("#setupBanner");
     setupBanner.classList.toggle("hidden", !!cfg.setup_complete);
+
+    const firstRun = !cfg.setup_complete;
+    document.body.classList.toggle("first-run", firstRun);
+    if (firstRun && !$("#view-setup").classList.contains("active")) {
+      showView("setup");
+      showSetupStep(1);
+    }
 
     const wifi = st.wifi || {};
     const wifiBanner = $("#wifiBanner");
@@ -342,30 +365,56 @@
 
   $("#btnGeo").onclick = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation not available in this browser.");
+      alert("This browser can’t share location. Type a city and coordinates instead.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         $("#latitude").value = pos.coords.latitude.toFixed(5);
         $("#longitude").value = pos.coords.longitude.toFixed(5);
-        if (!$("#timezone").value) {
-          $("#timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        $("#timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (!$("#locationName").value.trim()) {
+          $("#locationName").value = "My location";
         }
       },
-      (err) => alert(err.message),
+      (err) => alert(err.message || "Could not get location. Type a city instead."),
       { enableHighAccuracy: false, timeout: 10000 }
     );
   };
 
+  const btnNext1 = $("#btnSetupNext1");
+  if (btnNext1) btnNext1.onclick = () => showSetupStep(2);
+  const btnNext2 = $("#btnSetupNext2");
+  if (btnNext2) {
+    btnNext2.onclick = () => {
+      if (!$("#latitude").value || !$("#longitude").value) {
+        alert("Tap “Use this phone’s location”, or enter latitude and longitude.");
+        return;
+      }
+      showSetupStep(3);
+    };
+  }
+  const btnNext3 = $("#btnSetupNext3");
+  if (btnNext3) btnNext3.onclick = () => showSetupStep(4);
+  $$("[data-setup-step]").forEach((el) => {
+    el.addEventListener("click", () => showSetupStep(Number(el.dataset.setupStep)));
+  });
+
   $("#btnSaveSetup").onclick = async () => {
     const enabled = $$("#prayerToggles input:checked").map((el) => el.value);
+    const lat = Number($("#latitude").value);
+    const lon = Number($("#longitude").value);
+    if (Number.isNaN(lat) || Number.isNaN(lon)) {
+      alert("Location is required so prayer times can be calculated.");
+      showSetupStep(2);
+      return;
+    }
     await patch({
       setup_complete: true,
-      location_name: $("#locationName").value.trim(),
-      latitude: Number($("#latitude").value),
-      longitude: Number($("#longitude").value),
-      timezone: $("#timezone").value.trim(),
+      location_name: $("#locationName").value.trim() || "My location",
+      latitude: lat,
+      longitude: lon,
+      timezone: $("#timezone").value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone,
       method: Number($("#method").value),
       school: Number($("#school").value),
       volume: Number($("#setupVolume").value),
@@ -373,8 +422,8 @@
       audio_output: $("#audioOutput").value,
       enabled_prayers: enabled,
     });
+    document.body.classList.remove("first-run");
     showView("home");
-    alert("Setup saved.");
   };
 
   $("#btnPlayAdhan").onclick = () =>

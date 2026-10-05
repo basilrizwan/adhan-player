@@ -90,56 +90,82 @@
       </section>
 
       <section id="view-setup" class="view">
-        <h1>Setup</h1>
-        <p class="lede">Set location and calculation once. The speaker keeps working offline after that. Use your phone’s GPS or type city / lat‑long manually.</p>
+        <p class="setup-progress" id="setupProgress">Step 1 of 4</p>
+        <h1 id="setupTitle">Setup</h1>
 
-        <ol class="wizard">
-          <li>
-            <h3>1. Location</h3>
-            <label>City or place name
-              <input id="locationName" type="text" placeholder="San Ramon, CA" />
-            </label>
-            <div class="grid2">
-              <label>Latitude <input id="latitude" type="number" step="any" /></label>
-              <label>Longitude <input id="longitude" type="number" step="any" /></label>
-            </div>
-            <label>Timezone
-              <input id="timezone" type="text" placeholder="America/Los_Angeles" />
-            </label>
-            <button type="button" id="btnGeo" class="ghost">Use this phone’s location</button>
-            <p class="hint">Privacy tip: a nearby city is enough — exact GPS is optional.</p>
-          </li>
-          <li>
-            <h3>2. Calculation</h3>
-            <label>Method
-              <select id="method"></select>
-            </label>
-            <label>Asr school
-              <select id="school">
-                <option value="0">Standard (Shafi / Maliki / Hanbali)</option>
-                <option value="1">Hanafi</option>
-              </select>
-            </label>
-            <fieldset>
-              <legend>Enabled prayers</legend>
-              <div id="prayerToggles" class="checks"></div>
-            </fieldset>
-          </li>
-          <li>
-            <h3>3. Sound</h3>
-            <label>Main volume <input id="setupVolume" type="range" min="0" max="100" /></label>
-            <label>Fajr / night volume <input id="fajrVolume" type="range" min="0" max="100" /></label>
-            <label>Audio output
-              <select id="audioOutput">
-                <option value="auto">Auto</option>
-                <option value="hdmi">HDMI</option>
-                <option value="headphone">Headphone / 3.5mm</option>
-              </select>
-            </label>
-          </li>
-        </ol>
-        <div class="row actions">
-          <button type="button" id="btnSaveSetup">Save & finish setup</button>
+        <div class="setup-step" data-step="1">
+          <p class="lede">Let’s set up your speaker. About a minute — no account needed.</p>
+          <div class="banner access-card">
+            <p class="access-title">How you’ll open this later</p>
+            <p>On any phone or laptop on your home Wi‑Fi, go to <strong>http://adhan.local:8080</strong></p>
+            <p class="muted">After setup, bookmark it. On a phone you can also Add to Home Screen.</p>
+          </div>
+          <div class="row actions">
+            <button type="button" id="btnSetupNext1">Start</button>
+          </div>
+        </div>
+
+        <div class="setup-step" data-step="2">
+          <p class="lede">Where should prayer times be calculated?</p>
+          <button type="button" id="btnGeo">Use this phone’s location</button>
+          <p class="hint">We’ll fill latitude, longitude, and timezone. A nearby city is enough.</p>
+          <label>City or place name
+            <input id="locationName" type="text" placeholder="San Ramon, CA" />
+          </label>
+          <div class="grid2">
+            <label>Latitude <input id="latitude" type="number" step="any" /></label>
+            <label>Longitude <input id="longitude" type="number" step="any" /></label>
+          </div>
+          <label>Timezone
+            <input id="timezone" type="text" placeholder="America/Los_Angeles" />
+          </label>
+          <div class="row actions setup-nav">
+            <button type="button" class="ghost" data-setup-step="1">Back</button>
+            <button type="button" id="btnSetupNext2">Next</button>
+          </div>
+        </div>
+
+        <div class="setup-step" data-step="3">
+          <p class="lede">Choose how times are calculated. You can change this later.</p>
+          <label>Calculation method
+            <select id="method"></select>
+          </label>
+          <label>Asr
+            <select id="school">
+              <option value="0">Standard (Shafi / Maliki / Hanbali)</option>
+              <option value="1">Hanafi</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>Which prayers should play?</legend>
+            <div id="prayerToggles" class="checks"></div>
+          </fieldset>
+          <div class="row actions setup-nav">
+            <button type="button" class="ghost" data-setup-step="2">Back</button>
+            <button type="button" id="btnSetupNext3">Next</button>
+          </div>
+        </div>
+
+        <div class="setup-step" data-step="4">
+          <p class="lede">Set volume, then finish. You can preview audio on the Audio tab after this.</p>
+          <label>Main volume <input id="setupVolume" type="range" min="0" max="100" /></label>
+          <label>Fajr / night volume <input id="fajrVolume" type="range" min="0" max="100" /></label>
+          <label>Speaker output
+            <select id="audioOutput">
+              <option value="auto">Auto</option>
+              <option value="hdmi">HDMI / TV</option>
+              <option value="headphone">Headphone / 3.5mm</option>
+            </select>
+          </label>
+          <div class="banner access-card">
+            <p class="access-title">You’re almost done</p>
+            <p>After Finish, open <strong>http://adhan.local:8080</strong> anytime on this Wi‑Fi.</p>
+            <p class="muted" id="setupBookmarkHint">Bookmark this page, or Add to Home Screen on a phone.</p>
+          </div>
+          <div class="row actions setup-nav">
+            <button type="button" class="ghost" data-setup-step="3">Back</button>
+            <button type="button" id="btnSaveSetup">Finish setup</button>
+          </div>
         </div>
       </section>
 

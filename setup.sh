@@ -97,6 +97,7 @@ sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/tvservice
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/nmcli
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/iw
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/iptables
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager

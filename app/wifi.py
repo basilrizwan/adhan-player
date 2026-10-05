@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.config import CACHE_DIR
+
 log = logging.getLogger("adhan.wifi")
 
 HOTSPOT_CONN = "adhan-setup-hotspot"
@@ -172,55 +174,155 @@ def wifi_status() -> dict[str, Any]:
     }
 
 
-def scan_networks(rescan: bool = True) -> list[dict[str, Any]]:
-    """List nearby Wi‑Fi networks. May be empty while AP mode is active."""
-    if not has_nmcli():
-        return []
-    with _lock:
-        cmd = ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,IN-USE", "device", "wifi", "list"]
-        if rescan:
-            cmd.append("--rescan")
-            cmd.append("yes")
-        r = _run(cmd, timeout=45)
-        networks: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for line in r.stdout.splitlines():
-            parts = line.split(":")
-            if len(parts) < 4:
-                continue
-            # nmcli escapes : as \\:
-            # Simple parse: last two fields are SIGNAL-ish — use regex split on unescaped :
-            fields = re.split(r"(?<!\\):", line)
-            fields = [f.replace("\\:", ":") for f in fields]
-            if len(fields) < 4:
-                continue
-            ssid, signal, security, in_use = fields[0], fields[1], fields[2], fields[3]
-            if not ssid or ssid in seen:
-                continue
-            if ssid.startswith(SSID_PREFIX + "-"):
-                continue
-            seen.add(ssid)
-            try:
-                sig = int(signal)
-            except ValueError:
-                sig = 0
-            networks.append(
-                {
-                    "ssid": ssid,
-                    "signal": sig,
-                    "security": security or "",
-                    "in_use": in_use == "*",
-                }
-            )
-        networks.sort(key=lambda n: (-n["signal"], n["ssid"].lower()))
-        return networks
-
-
 def _ensure_sudo_nmcli() -> list[str]:
     """Prefix with sudo when not root."""
     if os.geteuid() == 0:
         return []
     return ["sudo", "-n"]
+
+
+def _scan_cache_path() -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / "wifi-scan.json"
+
+
+def _save_scan_cache(networks: list[dict[str, Any]]) -> None:
+    if not networks:
+        return
+    import json
+    from datetime import datetime
+
+    try:
+        _scan_cache_path().write_text(
+            json.dumps(
+                {"scanned_at": datetime.now().isoformat(timespec="seconds"), "networks": networks},
+                indent=2,
+            )
+            + "\n"
+        )
+    except OSError as e:
+        log.warning("Could not save Wi‑Fi scan cache: %s", e)
+
+
+def _load_scan_cache() -> list[dict[str, Any]]:
+    import json
+
+    path = _scan_cache_path()
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+        nets = data.get("networks") or []
+        return [n for n in nets if isinstance(n, dict) and n.get("ssid")]
+    except Exception:
+        return []
+
+
+def _parse_nmcli_wifi_stdout(stdout: str) -> list[dict[str, Any]]:
+    networks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in stdout.splitlines():
+        fields = re.split(r"(?<!\\):", line)
+        fields = [f.replace("\\:", ":") for f in fields]
+        if len(fields) < 4:
+            continue
+        ssid, signal, security, in_use = fields[0], fields[1], fields[2], fields[3]
+        if not ssid or ssid in seen:
+            continue
+        if ssid.startswith(SSID_PREFIX + "-"):
+            continue
+        seen.add(ssid)
+        try:
+            sig = int(signal)
+        except ValueError:
+            sig = 0
+        networks.append(
+            {
+                "ssid": ssid,
+                "signal": sig,
+                "security": security or "",
+                "in_use": in_use == "*",
+            }
+        )
+    networks.sort(key=lambda n: (-n["signal"], n["ssid"].lower()))
+    return networks
+
+
+def _nmcli_wifi_list(*, rescan: bool) -> list[dict[str, Any]]:
+    cmd = _ensure_sudo_nmcli() + [
+        "nmcli",
+        "-t",
+        "-f",
+        "SSID,SIGNAL,SECURITY,IN-USE",
+        "device",
+        "wifi",
+        "list",
+    ]
+    if rescan:
+        cmd += ["--rescan", "yes"]
+    r = _run(cmd, timeout=45)
+    if r.returncode != 0:
+        log.warning("nmcli wifi list failed: %s", (r.stderr or r.stdout).strip())
+        return []
+    return _parse_nmcli_wifi_stdout(r.stdout)
+
+
+def _iw_scan() -> list[dict[str, Any]]:
+    """Best-effort scan while AP mode is up (Pi firmware sometimes still reports BSS)."""
+    dev = wifi_device() or "wlan0"
+    r = _run(_ensure_sudo_nmcli() + ["iw", "dev", dev, "scan"], timeout=25)
+    if r.returncode != 0:
+        log.info("iw scan skipped/failed: %s", (r.stderr or r.stdout).strip()[:200])
+        return []
+    networks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    ssid = ""
+    signal = 0
+    security = ""
+    for raw in (r.stdout or "").splitlines():
+        line = raw.strip()
+        if line.startswith("BSS ") and ssid:
+            if ssid not in seen and not ssid.startswith(SSID_PREFIX + "-"):
+                seen.add(ssid)
+                networks.append({"ssid": ssid, "signal": signal, "security": security, "in_use": False})
+            ssid, signal, security = "", 0, ""
+        if line.startswith("SSID:"):
+            ssid = line.split("SSID:", 1)[1].strip()
+        elif line.startswith("signal:"):
+            try:
+                dbm = float(line.split()[1])
+                signal = int(min(100, max(0, 2 * (dbm + 100))))
+            except (IndexError, ValueError):
+                signal = 0
+        elif line.startswith("RSN:") or line.startswith("WPA:"):
+            security = "WPA"
+    if ssid and ssid not in seen and not ssid.startswith(SSID_PREFIX + "-"):
+        networks.append({"ssid": ssid, "signal": signal, "security": security, "in_use": False})
+    networks.sort(key=lambda n: (-n["signal"], n["ssid"].lower()))
+    return networks
+
+
+def scan_networks(rescan: bool = True) -> list[dict[str, Any]]:
+    """List nearby Wi‑Fi networks. Uses a pre-hotspot cache because AP mode often cannot scan."""
+    if not has_nmcli():
+        return _load_scan_cache()
+
+    with _lock:
+        live: list[dict[str, Any]] = []
+        hotspot = is_hotspot_active()
+        # Rescan while AP is up usually returns empty and can wipe NM's list.
+        live = _nmcli_wifi_list(rescan=rescan and not hotspot)
+        if not live:
+            live = _nmcli_wifi_list(rescan=False)
+        if not live:
+            live = _iw_scan()
+        if live:
+            _save_scan_cache(live)
+            return live
+        cached = _load_scan_cache()
+        if cached:
+            log.info("Using cached Wi‑Fi scan (%s networks) because live scan is empty", len(cached))
+        return cached
 
 
 def start_hotspot() -> dict[str, Any]:
@@ -229,6 +331,13 @@ def start_hotspot() -> dict[str, Any]:
 
     ssid = hotspot_ssid()
     dev = wifi_device() or "wlan0"
+
+    # Scan while the radio is still a client — AP mode on a Pi usually cannot see other SSIDs.
+    try:
+        pre = scan_networks(rescan=True)
+        log.info("Cached %s nearby network(s) before starting hotspot", len(pre))
+    except Exception as e:
+        log.warning("Pre-hotspot scan failed: %s", e)
 
     with _lock:
         log.info("Starting open setup hotspot SSID=%s on %s", ssid, dev)

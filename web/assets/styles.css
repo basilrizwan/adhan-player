@@ -270,6 +270,22 @@ input[type="range"] { width: 100%; }
 
 .wizard h3 { margin: 0 0 0.6rem; }
 
+.setup-progress {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 0.35rem;
+}
+
+body.first-run .tabs { display: none; }
+body.first-run .setup-step { display: none; }
+body.first-run .setup-step.active { display: block; }
+body:not(.first-run) .setup-step[data-step="1"],
+body:not(.first-run) .setup-progress { display: none; }
+body:not(.first-run) .setup-nav .ghost[data-setup-step] { display: none; }
+
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
