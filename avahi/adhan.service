@@ -6,13 +6,13 @@
     <type>_adhan._tcp</type>
     <port>8080</port>
     <txt-record>path=/</txt-record>
-    <txt-record>version=1.2.2</txt-record>
+    <txt-record>version=1.2.3</txt-record>
     <txt-record>name=Adhan Player</txt-record>
   </service>
   <service>
     <type>_http._tcp</type>
     <port>8080</port>
     <txt-record>path=/</txt-record>
-    <txt-record>version=1.2.2</txt-record>
+    <txt-record>version=1.2.3</txt-record>
   </service>
 </service-group>

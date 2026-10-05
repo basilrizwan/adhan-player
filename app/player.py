@@ -450,9 +450,11 @@ def start_scheduler() -> None:
 
 
 def install_signal_handlers() -> None:
-    def _handler(signum, frame):
+    def _handler(signum, frame):  # noqa: ARG001
         log.info("Shutdown signal received")
         request_shutdown()
+        # Don't swallow SIGTERM — uvicorn must exit or systemctl restart hangs.
+        raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, _handler)
     signal.signal(signal.SIGINT, _handler)

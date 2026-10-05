@@ -9,7 +9,9 @@ User=pi
 WorkingDirectory=/home/pi/adhan-player
 ExecStart=/home/pi/adhan-player/venv/bin/python -m app.main
 Restart=always
-RestartSec=10
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
 Environment=PYTHONUNBUFFERED=1
 
 # Allow sleep/wake power management (optional advanced mode)
