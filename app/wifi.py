@@ -572,55 +572,42 @@ def _clear_dnsmasq_captive() -> None:
         _run(_ensure_sudo_nmcli() + ["rm", "-f", str(conf)])
 
 
-def _enable_captive_redirects() -> None:
-    """Redirect TCP/80 → 8080 on the AP so captive probes hit our portal."""
-    # Clear then add (idempotent-ish)
-    _disable_captive_redirects()
+def enable_http80_redirect() -> None:
+    """http://adhan.local uses port 80; the app listens on 8080."""
+    spec = [
+        "-t",
+        "nat",
+        "-A",
+        "PREROUTING",
+        "-p",
+        "tcp",
+        "--dport",
+        "80",
+        "-j",
+        "REDIRECT",
+        "--to-port",
+        "8080",
+    ]
     for proto in ("iptables", "ip6tables"):
-        _run(
-            _ensure_sudo_nmcli()
-            + [
-                proto,
-                "-t",
-                "nat",
-                "-A",
-                "PREROUTING",
-                "-p",
-                "tcp",
-                "--dport",
-                "80",
-                "-j",
-                "REDIRECT",
-                "--to-port",
-                "8080",
-            ]
-        )
+        check = spec.copy()
+        check[check.index("-A")] = "-C"
+        exists = _run(_ensure_sudo_nmcli() + [proto] + check)
+        if exists.returncode != 0:
+            r = _run(_ensure_sudo_nmcli() + [proto] + spec)
+            if r.returncode != 0:
+                log.warning("%s port-80 redirect failed: %s", proto, (r.stderr or "").strip())
+            else:
+                log.info("%s: redirecting TCP/80 → 8080 (adhan.local)", proto)
+
+
+def _enable_captive_redirects() -> None:
+    """Captive DNS plus TCP/80 → 8080 so phones open the setup page."""
+    enable_http80_redirect()
+    _write_dnsmasq_captive()
 
 
 def _disable_captive_redirects() -> None:
-    for proto in ("iptables", "ip6tables"):
-        # Delete all matching rules (loop a few times)
-        for _ in range(4):
-            r = _run(
-                _ensure_sudo_nmcli()
-                + [
-                    proto,
-                    "-t",
-                    "nat",
-                    "-D",
-                    "PREROUTING",
-                    "-p",
-                    "tcp",
-                    "--dport",
-                    "80",
-                    "-j",
-                    "REDIRECT",
-                    "--to-port",
-                    "8080",
-                ]
-            )
-            if r.returncode != 0:
-                break
+    # Keep the port-80 redirect so http://adhan.local still works on the LAN.
     _clear_dnsmasq_captive()
 
 

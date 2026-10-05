@@ -159,7 +159,7 @@ def api_status() -> dict[str, Any]:
         "longitude": cfg.get("longitude"),
         "timezone": cfg.get("timezone"),
         "ips": _local_ips(),
-        "urls": [f"http://adhan.local:8080"] + [f"http://{ip}:8080" for ip in _local_ips()],
+        "urls": [f"http://adhan.local"] + [f"http://{ip}" for ip in _local_ips()] + [f"http://adhan.local:8080"] + [f"http://{ip}:8080" for ip in _local_ips()],
         "clock_ok": clock_ok,
         "clock_warning": clock_warning,
         "state": st,
@@ -378,7 +378,7 @@ def api_wifi_connect(req: WifiConnectRequest) -> dict[str, Any]:
         "wifi": status,
         "message": (
             "Connecting… this phone will lose the setup hotspot shortly. "
-            "Rejoin your home Wi‑Fi, then open http://adhan.local:8080"
+            "Rejoin your home Wi‑Fi, then open http://adhan.local"
         ),
     }
 
@@ -406,7 +406,7 @@ def api_wifi_setup_info() -> dict[str, Any]:
         "hotspot_ssid": hotspot_ssid(),
         "hotspot_password": "",
         "hotspot_url": "http://10.42.0.1:8080/wifi",
-        "lan_url": "http://adhan.local:8080",
+        "lan_url": "http://adhan.local",
         "wifi": wifi_status(),
     }
 

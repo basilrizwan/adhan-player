@@ -136,7 +136,7 @@
         <p class="meta" id="doneSteps" style="margin:0;">
           1. Open this phone’s Wi‑Fi settings<br />
           2. Join your <strong>home</strong> network again<br />
-          3. Open <code>http://adhan.local:8080</code><br />
+          3. Open <code>http://adhan.local</code><br />
           4. Bookmark that page (or Add to Home Screen)
         </p>
       </div>
@@ -187,7 +187,7 @@
           : "";
         if (info.wifi && info.wifi.mode === "station" && info.wifi.ssid) {
           $("doneLede").textContent = `The speaker is already on “${info.wifi.ssid}”.`;
-          $("doneStatus").textContent = "Open http://adhan.local:8080 on your home Wi‑Fi.";
+          $("doneStatus").textContent = "Open http://adhan.local on your home Wi‑Fi.";
           showStep(4);
         }
       } catch (_) {
@@ -278,7 +278,7 @@
             if (phase === "succeeded") {
               $("doneLede").textContent = "The speaker joined “" + (st.ssid || ssid) + "”.";
               $("doneStatus").textContent =
-                "Now switch this phone to home Wi‑Fi, then open http://adhan.local:8080";
+                "Now switch this phone to home Wi‑Fi, then open http://adhan.local";
               break;
             }
             if (phase === "failed") {
@@ -289,7 +289,7 @@
           } catch (_) {
             $("doneLede").textContent = "Setup Wi‑Fi dropped — that’s normal.";
             $("doneStatus").textContent =
-              "Join your home Wi‑Fi on this phone, then open http://adhan.local:8080";
+              "Join your home Wi‑Fi on this phone, then open http://adhan.local";
             break;
           }
         }

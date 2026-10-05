@@ -134,7 +134,7 @@
     renderTimes();
 
     const urls = st.urls || [];
-    const portalUrl = "http://adhan.local:8080";
+    const portalUrl = "http://adhan.local";
     $("#deviceInfo").textContent = [
       `Open: ${portalUrl}`,
       urls.filter((u) => !u.includes("adhan.local")).length
@@ -164,7 +164,7 @@
           "On Android: tap the browser menu → Install app / Add to Home screen.";
       } else {
         bookmarkHint.textContent =
-          "On a laptop: bookmark http://adhan.local:8080 for quick access next time.";
+          "On a laptop: bookmark http://adhan.local for quick access next time.";
       }
     }
 
@@ -464,7 +464,7 @@
     if ($("#sleepEnabled").checked) {
       const ok = confirm(
         "Enable sleep outside prayer times?\n\n" +
-          "While asleep, the web portal at http://adhan.local:8080 will NOT be reachable " +
+          "While asleep, the web portal at http://adhan.local will NOT be reachable " +
           "(Wi‑Fi and the Pi are suspended). The device wakes ~3 minutes before each prayer.\n\n" +
           "Leave this off if you want the portal available anytime."
       );

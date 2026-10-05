@@ -16,7 +16,7 @@ from app.api import router as api_router
 from app.captive import CaptivePortalMiddleware
 from app.config import AUDIO_DIR, BASE_DIR, CACHE_DIR, WEB_DIR, load_config
 from app.player import install_signal_handlers, request_shutdown, start_scheduler
-from app.wifi import start_wifi_watchdog, stop_wifi_watchdog
+from app.wifi import enable_http80_redirect, start_wifi_watchdog, stop_wifi_watchdog
 from app.updater import start_updater, stop_updater
 
 CACHE_DIR.mkdir(exist_ok=True)
@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI):
     install_signal_handlers()
     cfg = load_config()
     log.info("Adhan Player %s starting (setup_complete=%s)", __version__, cfg.get("setup_complete"))
+    enable_http80_redirect()
     start_wifi_watchdog()
     start_updater()
     start_scheduler()
@@ -58,7 +59,7 @@ app = FastAPI(
     description=(
         "Local-first Raspberry Pi adhan speaker. "
         "Configure via the web UI or this OpenAPI. "
-        "Discover on the LAN as http://adhan.local:8080. "
+        "Discover on the LAN as http://adhan.local (port 80 → 8080). "
         "If offline, joins setup hotspot Adhan-XXXX for phone Wi‑Fi onboarding."
     ),
     version=__version__,

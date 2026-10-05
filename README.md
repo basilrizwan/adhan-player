@@ -7,7 +7,7 @@ No cloud account. Each home runs its own device.
 ## Features
 
 - Offline prayer times (`adhanpy`) with optional Aladhan refresh
-- Web portal at `http://adhan.local:8080` (PWA)
+- Web portal at `http://adhan.local` (also `http://adhan.local:8080`)
 - Post-adhan dua catalog with browser + speaker preview
 - Mute / skip / test play / night (Fajr) volume
 - mDNS discovery (`_adhan._tcp`)
@@ -95,7 +95,7 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
 ## Important defaults
 
 - **`sleep_enabled: false`** (always on) so the portal stays online — Advanced can enable sleep, but the UI warns that `adhan.local` / Wi‑Fi go offline while suspended
-- Hostname + Avahi so every install is **`http://adhan.local:8080`** (IP still works as fallback)
+- Hostname + Avahi so every install is **`http://adhan.local`** (port 80 is redirected to 8080; `:8080` still works)
 - Setup: phone GPS or manual lat/long; **Times** tab shows today’s schedule
 ## Auto-update
 
