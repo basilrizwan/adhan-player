@@ -16,7 +16,7 @@ Bundled media is for personal / da‘wah use with the Adhan Player. Replace any 
 | File | Notes |
 | --- | --- |
 | `SOURCE-hisn-al-muslim-adhan.mp3` | Hisn al-Muslim — Adhan chapter audio (Qahtani), used as the Arabic source for previews |
-| `short-authentic.mp3` | Trimmed Arabic preview (Bukhari wording intent) |
+| `from-fajr.mp3` | Dua clipped from `fajr.mp3` at 3:08 (15s) — current default |
 | `with-translation.mp3` | Arabic + English TTS translation (macOS `say` / Samantha) for family learning |
 | `slow-teach.mp3` | Slowed full chapter for teaching |
 | `masjid-wording.mp3` | Arabic preview + English “innaka lā tukhliful-mīʿād” label (scholars differ on this addition) |

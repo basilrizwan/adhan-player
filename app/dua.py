@@ -37,6 +37,19 @@ ENGLISH_WITH_PROMISE = ENGLISH + " Verily You never fail in Your promise."
 
 DUA_CATALOG: list[dict[str, Any]] = [
     {
+        "id": "from-fajr",
+        "title": "From your Fajr recording",
+        "description": "Dua clipped from the end of fajr.mp3 (from 3:08, 15 seconds).",
+        "file": "audio/dua/from-fajr.mp3",
+        "variant": "bukhari",
+        "has_translation": False,
+        "style": "normal",
+        "arabic": ARABIC,
+        "transliteration": TRANSLITERATION,
+        "english": ENGLISH,
+        "source": "User fajr.mp3 (3:08–3:23)",
+    },
+    {
         "id": "short-authentic",
         "title": "Short authentic",
         "description": "Arabic only — Bukhari wording (Hisn al-Muslim). Best daily default.",
