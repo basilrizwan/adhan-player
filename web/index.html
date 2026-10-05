@@ -21,6 +21,7 @@
       </div>
       <nav class="tabs" role="tablist">
         <button class="tab active" data-view="home">Home</button>
+        <button class="tab" data-view="times">Times</button>
         <button class="tab" data-view="setup">Setup</button>
         <button class="tab" data-view="audio">Audio</button>
         <button class="tab" data-view="wifi">Wi‑Fi</button>
@@ -56,8 +57,7 @@
           <input id="volume" type="range" min="0" max="100" value="80" />
         </div>
 
-        <h2>Today</h2>
-        <ul id="todayList" class="times"></ul>
+        <p class="hint">Full schedule is on the <button type="button" class="linkish" data-goto="times">Times</button> tab. Change location in Setup.</p>
 
         <h2>Device</h2>
         <div class="card-plain" id="deviceInfo"></div>
@@ -70,9 +70,22 @@
         <pre id="logBox" class="log"></pre>
       </section>
 
+      <section id="view-times" class="view">
+        <h1>Prayer times</h1>
+        <p class="lede" id="timesLocationLine">Based on your saved location and calculation method.</p>
+        <div id="timesClockWarn" class="banner warn hidden"></div>
+        <h2>Today</h2>
+        <ul id="todayList" class="times"></ul>
+        <h2>Upcoming</h2>
+        <ul id="upcomingList" class="times"></ul>
+        <div class="row actions">
+          <button type="button" class="ghost" data-goto="setup">Edit location</button>
+        </div>
+      </section>
+
       <section id="view-setup" class="view">
         <h1>Setup</h1>
-        <p class="lede">Set location and calculation once. The speaker keeps working offline after that.</p>
+        <p class="lede">Set location and calculation once. The speaker keeps working offline after that. Use your phone’s GPS or type city / lat‑long manually.</p>
 
         <ol class="wizard">
           <li>
@@ -161,8 +174,13 @@
         </label>
         <label class="toggle warn-toggle">
           <input type="checkbox" id="sleepEnabled" />
-          Sleep between prayers (saves power; portal goes offline until next wake)
+          Sleep outside prayer times (advanced power saving)
         </label>
+        <div id="sleepCallout" class="banner warn">
+          Leave this <strong>off</strong> unless you need battery/power saving.
+          When sleep is on, the Pi suspends between prayers — Wi‑Fi, <code>adhan.local</code>, and this web portal are unreachable until ~3 minutes before the next adhan.
+          Default is always-on so the portal stays available anytime on your LAN.
+        </div>
         <label class="toggle">
           <input type="checkbox" id="offlineTimes" />
           Offline prayer calculation (recommended)

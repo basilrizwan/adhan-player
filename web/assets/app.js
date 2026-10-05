@@ -108,22 +108,16 @@
         .join("\n");
     }
 
-    const times = sched.today || st.state?.today_times || {};
-    const list = $("#todayList");
-    list.innerHTML = Object.keys(times).length
-      ? Object.entries(times)
-          .map(([name, t]) => {
-            const isNext = name === next;
-            return `<li class="${isNext ? "next" : ""}"><span>${name}</span><strong>${t}</strong></li>`;
-          })
-          .join("")
-      : "<li><span>No times yet</span><strong>—</strong></li>";
+    renderTimes();
 
     const urls = st.urls || [];
+    const portalUrl = "http://adhan.local:8080";
     $("#deviceInfo").textContent = [
-      `Open: ${urls[0] || "http://adhan.local:8080"}`,
-      urls.length > 1 ? `Also: ${urls.slice(1).join(", ")}` : null,
-      `Sleep mode: ${cfg.sleep_enabled ? "ON (portal may be offline)" : "off"}`,
+      `Open: ${portalUrl}`,
+      urls.filter((u) => !u.includes("adhan.local")).length
+        ? `Also: ${urls.filter((u) => !u.includes("adhan.local")).join(", ")}`
+        : null,
+      `Sleep mode: ${cfg.sleep_enabled ? "ON — portal offline while asleep" : "off (always on)"}`,
       `Dua: ${cfg.dua_enabled ? cfg.dua_id : "disabled"}`,
     ]
       .filter(Boolean)
@@ -133,13 +127,12 @@
     $("#volume").value = vol;
     $("#volVal").textContent = vol;
 
-    const primary = urls[0] || window.location.origin;
     const qrHost = $("#qr");
-    if (window.QRCode && qrHost && qrHost.dataset.url !== primary) {
+    if (window.QRCode && qrHost && qrHost.dataset.url !== portalUrl) {
       qrHost.innerHTML = "";
-      qrHost.dataset.url = primary;
+      qrHost.dataset.url = portalUrl;
       // eslint-disable-next-line no-new
-      new QRCode(qrHost, { text: primary, width: 160, height: 160 });
+      new QRCode(qrHost, { text: portalUrl, width: 160, height: 160 });
     }
 
     api("/api/logs?lines=30")
@@ -149,6 +142,71 @@
       .catch(() => {
         $("#logBox").textContent = "Could not load logs.";
       });
+  }
+
+  function renderTimes() {
+    const st = state.status || {};
+    const cfg = state.config || {};
+    const sched = state.schedule || {};
+    const next = st.state?.next_prayer || sched.next_prayer;
+    const times = sched.today || st.state?.today_times || {};
+    const list = $("#todayList");
+    if (list) {
+      list.innerHTML = Object.keys(times).length
+        ? Object.entries(times)
+            .map(([name, t]) => {
+              const isNext = name === next;
+              return `<li class="${isNext ? "next" : ""}"><span>${name}</span><strong>${t}</strong></li>`;
+            })
+            .join("")
+        : "<li><span>No times yet — finish Setup</span><strong>—</strong></li>";
+    }
+
+    const loc = $("#timesLocationLine");
+    if (loc) {
+      loc.textContent = [
+        cfg.location_name || "Location not set",
+        cfg.latitude != null && cfg.longitude != null
+          ? `${Number(cfg.latitude).toFixed(4)}, ${Number(cfg.longitude).toFixed(4)}`
+          : null,
+        cfg.timezone,
+        `Method ${cfg.method ?? 2}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+
+    const clock = $("#timesClockWarn");
+    if (clock) {
+      if (st.clock_ok === false || st.clock_warning) {
+        clock.textContent =
+          st.clock_warning || "Clock sync issue — fix NTP before trusting these times.";
+        clock.classList.remove("hidden");
+      } else {
+        clock.classList.add("hidden");
+      }
+    }
+
+    const upcoming = $("#upcomingList");
+    if (upcoming) {
+      const rows = (sched.schedule || st.state?.schedule || []).slice(0, 10);
+      upcoming.innerHTML = rows.length
+        ? rows
+            .map((row) => {
+              const when = row.at ? new Date(row.at) : null;
+              const label = when
+                ? when.toLocaleString([], {
+                    weekday: "short",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })
+                : "—";
+              const isNext = row.name === next && row.at === (st.state?.next_prayer_at || sched.next_prayer_at);
+              return `<li class="${isNext ? "next" : ""}"><span>${row.name}</span><strong>${label}</strong></li>`;
+            })
+            .join("")
+        : "<li><span>No upcoming prayers</span><strong>—</strong></li>";
+    }
   }
 
   function renderDuas() {
@@ -332,6 +390,18 @@
   }
 
   $("#btnSaveAdvanced").onclick = async () => {
+    if ($("#sleepEnabled").checked) {
+      const ok = confirm(
+        "Enable sleep outside prayer times?\n\n" +
+          "While asleep, the web portal at http://adhan.local:8080 will NOT be reachable " +
+          "(Wi‑Fi and the Pi are suspended). The device wakes ~3 minutes before each prayer.\n\n" +
+          "Leave this off if you want the portal available anytime."
+      );
+      if (!ok) {
+        $("#sleepEnabled").checked = false;
+        return;
+      }
+    }
     await patch({
       device_name: $("#deviceName").value.trim() || "Adhan Player",
       kahf_enabled: $("#kahfEnabled").checked,

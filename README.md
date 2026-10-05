@@ -95,8 +95,9 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
 
 ## Important defaults
 
-- **`sleep_enabled: false`** so the portal stays online (hardware sleep makes the UI unreachable)
-- Avahi/mDNS is **enabled** for `adhan.local`
+- **`sleep_enabled: false`** (always on) so the portal stays online — Advanced can enable sleep, but the UI warns that `adhan.local` / Wi‑Fi go offline while suspended
+- Hostname + Avahi so every install is **`http://adhan.local:8080`** (IP still works as fallback)
+- Setup: phone GPS or manual lat/long; **Times** tab shows today’s schedule
 ## Auto-update
 
 The Pi pulls `main` from [github.com/basilrizwan/adhan-player](https://github.com/basilrizwan/adhan-player) **on boot** (after ~90s) and **around 12:08am** local time. `config.json` and your adhan/fajr/kahf files are kept.
