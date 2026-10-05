@@ -16,6 +16,7 @@ build/
 
 # Large / user-specific audio (keep dua previews + small defaults)
 audio/kahf.mp3
+audio/fajr.full.mp3
 audio/adhan.prev.mp3
 audio/candidates/
 audio/*.wav

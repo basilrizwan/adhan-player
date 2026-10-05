@@ -6,6 +6,7 @@ Bundled media is for personal / da‘wah use with the Adhan Player. Replace any 
 
 - Default install may download a Mishary Rashid Alafasy adhan from the Internet Archive (`AdhanMisharyRashid`).
 - Your device may already contain custom files (`audio/adhan.mp3`, `audio/fajr.mp3`) or samples under `audio/candidates/`.
+- Fajr is trimmed at **3:07** so the built-in dua at the end is not played; post-adhan dua is `audio/dua/from-fajr.mp3`.
 
 ## Surah Kahf
 
