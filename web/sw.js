@@ -1,6 +1,6 @@
 /* Minimal offline shell for the local portal */
-const CACHE = "adhan-shell-v3";
-const ASSETS = ["/", "/assets/styles.css?v=1.2.10", "/assets/app.js?v=1.2.10", "/manifest.json"];
+const CACHE = "adhan-shell-v4";
+const ASSETS = ["/", "/assets/styles.css?v=1.3.0", "/assets/app.js?v=1.3.0", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -16,7 +16,8 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/api/")) return;
+  if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/media/")) return;
   event.respondWith(
     fetch(event.request)
       .then((res) => {

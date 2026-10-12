@@ -34,6 +34,12 @@ CALC_METHODS = {
     15: "Moonsighting",
 }
 
+BOOT_SOUNDS = {
+    "chime": "audio/boot-chime.mp3",
+    "bell": "audio/boot-bell.mp3",
+    "takbir": "audio/boot-takbir.mp3",
+}
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "setup_complete": False,
     "device_name": "Adhan Player",

@@ -8,13 +8,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app import __version__
 from app.config import (
     AUDIO_DIR,
     BASE_DIR,
+    BOOT_SOUNDS,
     CALC_METHODS,
     PRAYER_NAMES,
     load_config,
@@ -22,8 +25,9 @@ from app.config import (
     update_config,
 )
 from app.dua import get_dua, list_duas
-from app.player import play_adhan, play_boot_sound, play_file, stop_playback
-from app.state import get_state, request_skip, set_mute_until, update_state
+from app.geocode import GeocodeUnavailable, search_places
+from app.player import play_adhan, play_boot_sound, play_file, refresh_schedule, stop_playback
+from app.state import get_state, request_skip, set_mute_until
 from app.times import check_clock_health, get_today_times
 from app.updater import apply_update_async, check_for_updates, status as update_status
 from app.wifi import (
@@ -46,19 +50,19 @@ class WifiConnectRequest(BaseModel):
 
 class ConfigPatch(BaseModel):
     setup_complete: Optional[bool] = None
-    device_name: Optional[str] = None
-    location_name: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    device_name: Optional[str] = Field(default=None, max_length=60)
+    location_name: Optional[str] = Field(default=None, max_length=120)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     timezone: Optional[str] = None
     method: Optional[int] = None
-    school: Optional[int] = None
+    school: Optional[int] = Field(default=None, ge=0, le=1)
     volume: Optional[int] = Field(default=None, ge=0, le=100)
     fajr_volume: Optional[int] = Field(default=None, ge=0, le=100)
     audio_file: Optional[str] = None
     fajr_audio_file: Optional[str] = None
     enabled_prayers: Optional[list[str]] = None
-    audio_output: Optional[str] = None
+    audio_output: Optional[str] = Field(default=None, pattern="^(auto|hdmi|headphone)$")
     sleep_enabled: Optional[bool] = None
     play_on_boot: Optional[bool] = None
     boot_sound: Optional[str] = None
@@ -85,6 +89,32 @@ class ConfigPatch(BaseModel):
     update_at_midnight: Optional[bool] = None
     update_repo: Optional[str] = None
     update_branch: Optional[str] = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        try:
+            ZoneInfo(v)
+        except Exception as e:
+            raise ValueError(f"Unknown timezone: {v!r} (use an IANA name like America/Chicago)") from e
+        return v
+
+    @field_validator("method")
+    @classmethod
+    def _valid_method(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in CALC_METHODS:
+            raise ValueError(f"Unknown calculation method: {v}")
+        return v
+
+    @field_validator("boot_sound")
+    @classmethod
+    def _valid_boot_sound(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in BOOT_SOUNDS and v != "off":
+            raise ValueError(f"boot_sound must be one of: off, {', '.join(BOOT_SOUNDS)}")
+        return v
 
 
 class PlayRequest(BaseModel):
@@ -150,6 +180,7 @@ def api_status() -> dict[str, Any]:
     cfg = load_config()
     st = get_state()
     clock_ok, clock_warning = check_clock_health()
+    ips = _local_ips()
     return {
         "version": __version__,
         "device_name": cfg.get("device_name", "Adhan Player"),
@@ -158,8 +189,11 @@ def api_status() -> dict[str, Any]:
         "latitude": cfg.get("latitude"),
         "longitude": cfg.get("longitude"),
         "timezone": cfg.get("timezone"),
-        "ips": _local_ips(),
-        "urls": [f"http://adhan.local"] + [f"http://{ip}" for ip in _local_ips()] + [f"http://adhan.local:8080"] + [f"http://{ip}:8080" for ip in _local_ips()],
+        "ips": ips,
+        "urls": ["http://adhan.local"]
+        + [f"http://{ip}" for ip in ips]
+        + ["http://adhan.local:8080"]
+        + [f"http://{ip}:8080" for ip in ips],
         "clock_ok": clock_ok,
         "clock_warning": clock_warning,
         "state": st,
@@ -190,14 +224,23 @@ def api_patch_config(patch: ConfigPatch) -> dict[str, Any]:
         bad = [p for p in data["enabled_prayers"] if p not in PRAYER_NAMES]
         if bad:
             raise HTTPException(400, f"Invalid prayers: {bad}")
-    if "method" in data and data["method"] is not None and data["method"] not in CALC_METHODS:
-        # Allow unknown methods that Aladhan might support, but warn via response
-        pass
+    if data.get("boot_sound"):
+        sound = data["boot_sound"]
+        data["play_on_boot"] = sound != "off"
+        if sound in BOOT_SOUNDS:
+            data["boot_audio_file"] = BOOT_SOUNDS[sound]
     cfg = update_config(data)
-    # Refresh schedule snapshot
-    times = get_today_times(cfg)
-    update_state(today_times=times or {})
+    refresh_schedule(cfg)
     return public_config(cfg)
+
+
+@router.get("/geocode")
+def api_geocode(q: str, count: int = 6) -> dict[str, Any]:
+    """Search for a city; returns latitude, longitude and IANA timezone. Needs internet."""
+    try:
+        return {"results": search_places(q, max(1, min(count, 10)))}
+    except GeocodeUnavailable as e:
+        raise HTTPException(503, str(e)) from e
 
 
 @router.get("/schedule")
@@ -333,7 +376,7 @@ def api_mute(req: MuteRequest) -> dict[str, Any]:
             raise HTTPException(400, f"Invalid until: {e}") from e
         return {"ok": True, "state": set_mute_until(until)}
     minutes = req.minutes or 60
-    until = datetime.now() + timedelta(minutes=minutes)
+    until = datetime.now().astimezone() + timedelta(minutes=minutes)
     return {"ok": True, "state": set_mute_until(until)}
 
 

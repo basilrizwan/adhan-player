@@ -18,6 +18,8 @@ log = logging.getLogger("adhan.wifi")
 HOTSPOT_CONN = "adhan-setup-hotspot"
 SSID_PREFIX = "Adhan"
 HOTSPOT_IP = "10.42.0.1"
+WATCHDOG_INTERVAL_SECS = int(os.environ.get("ADHAN_WIFI_WATCHDOG_SECS", "60"))
+HOTSPOT_RETRY_SECS = int(os.environ.get("ADHAN_HOTSPOT_RETRY_SECS", "300"))
 
 _lock = threading.RLock()
 _watchdog_thread: threading.Thread | None = None
@@ -47,8 +49,14 @@ def _run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(cmd, returncode=127, stdout="", stderr="not found")
 
 
+_nmcli_present: bool | None = None
+
+
 def has_nmcli() -> bool:
-    return _run(["which", "nmcli"]).returncode == 0
+    global _nmcli_present
+    if _nmcli_present is None:
+        _nmcli_present = _run(["which", "nmcli"]).returncode == 0
+    return _nmcli_present
 
 
 def mac_suffix() -> str:
@@ -119,22 +127,27 @@ def has_default_route() -> bool:
     return bool(r.stdout.strip())
 
 
-def has_internet(timeout: float = 3.0) -> bool:
-    """Cheap connectivity check — DNS or TCP to a public resolver."""
+_internet_cache: tuple[float, bool] = (0.0, False)
+
+
+def has_internet(timeout: float = 1.5, max_age: float = 15.0) -> bool:
+    """Cheap connectivity check — TCP to a public resolver, cached briefly."""
     import socket
 
-    try:
-        sock = socket.create_connection(("1.1.1.1", 53), timeout=timeout)
-        sock.close()
-        return True
-    except OSError:
-        pass
-    try:
-        sock = socket.create_connection(("8.8.8.8", 53), timeout=timeout)
-        sock.close()
-        return True
-    except OSError:
-        return False
+    global _internet_cache
+    checked_at, ok = _internet_cache
+    if time.monotonic() - checked_at < max_age:
+        return ok
+    ok = False
+    for host in ("1.1.1.1", "8.8.8.8"):
+        try:
+            socket.create_connection((host, 53), timeout=timeout).close()
+            ok = True
+            break
+        except OSError:
+            continue
+    _internet_cache = (time.monotonic(), ok)
+    return ok
 
 
 def is_station_connected() -> bool:
@@ -154,9 +167,10 @@ def connect_progress() -> dict[str, Any]:
 
 def wifi_status() -> dict[str, Any]:
     hotspot = is_hotspot_active()
-    ssid = current_ssid()
-    online = (not hotspot) and has_internet()
-    station = is_station_connected()
+    ssid = None if hotspot else current_ssid()
+    route = has_default_route()
+    station = bool(ssid) and route
+    online = (not hotspot) and route and has_internet()
     return {
         "nmcli": has_nmcli(),
         "device": wifi_device(),
@@ -165,8 +179,8 @@ def wifi_status() -> dict[str, Any]:
         "hotspot_ssid": hotspot_ssid(),
         "hotspot_password": hotspot_password(),
         "hotspot_url": f"http://{HOTSPOT_IP}:8080/wifi",
-        "ssid": None if hotspot else ssid,
-        "has_route": has_default_route(),
+        "ssid": ssid,
+        "has_route": route,
         "online": online,
         "setup_needed": hotspot or not station,
         "captive": hotspot,
@@ -430,6 +444,97 @@ def stop_hotspot() -> dict[str, Any]:
         return wifi_status()
 
 
+def _active_station_connection() -> str | None:
+    r = _run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"])
+    for line in r.stdout.splitlines():
+        name, _, ctype = line.rpartition(":")
+        if ctype == "802-11-wireless" and name and name != HOTSPOT_CONN:
+            return name.replace("\\:", ":")
+    return None
+
+
+def _saved_station_connections() -> list[str]:
+    """Saved Wi‑Fi client profiles, most recently used first."""
+    r = _run(["nmcli", "-t", "-f", "NAME,TYPE,TIMESTAMP", "connection", "show"])
+    rows: list[tuple[int, str]] = []
+    for line in r.stdout.splitlines():
+        parts = re.split(r"(?<!\\):", line)
+        if len(parts) < 3 or parts[1] != "802-11-wireless":
+            continue
+        name = parts[0].replace("\\:", ":")
+        if name == HOTSPOT_CONN:
+            continue
+        try:
+            ts = int(parts[2])
+        except ValueError:
+            ts = 0
+        rows.append((ts, name))
+    rows.sort(reverse=True)
+    return [name for _, name in rows]
+
+
+def _bring_up_saved(name: str, timeout: int = 45) -> bool:
+    log.info("Trying saved Wi‑Fi connection %s", name)
+    r = _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "up", name], timeout=timeout)
+    if r.returncode != 0:
+        log.info("Saved connection %s did not come up: %s", name, (r.stderr or r.stdout).strip()[:200])
+        return False
+    for _ in range(20):
+        if has_default_route():
+            break
+        time.sleep(0.5)
+    set_led_mode("online" if has_internet(max_age=0) else "idle")
+    return True
+
+
+def _friendly_nmcli_error(raw: str) -> str:
+    text = raw.strip()
+    low = text.lower()
+    if "secrets were required" in low or "802-1x supplicant" in low or "psk" in low:
+        return "Wrong Wi‑Fi password (or the network needs a password)."
+    if "no network with ssid" in low:
+        return "Couldn’t find that network. Check the name, move the speaker closer, or tick “Hidden network”."
+    if "timeout" in low or "timed out" in low:
+        return "The router didn’t answer in time. Move the speaker closer and try again."
+    return text or "Failed to connect"
+
+
+def _hotspot_has_clients() -> bool | None:
+    """True if a phone is joined to the setup hotspot; None if we can't tell."""
+    dev = wifi_device() or "wlan0"
+    r = _run(_ensure_sudo_nmcli() + ["iw", "dev", dev, "station", "dump"], timeout=10)
+    if r.returncode == 0:
+        return "Station " in (r.stdout or "")
+    r = _run(["ip", "neigh", "show", "dev", dev])
+    if r.returncode == 0:
+        return any(
+            line.startswith("10.42.") and ("REACHABLE" in line or "DELAY" in line)
+            for line in r.stdout.splitlines()
+        )
+    return None
+
+
+def retry_home_wifi() -> bool:
+    """While the setup hotspot is idle, try saved home networks (e.g. router was rebooting)."""
+    saved = _saved_station_connections()[:2]
+    if not saved:
+        return False
+    with _lock:
+        if _connect_state.get("busy") or not is_hotspot_active():
+            return False
+        log.info("Hotspot idle — retrying saved Wi‑Fi: %s", ", ".join(saved))
+        _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "down", HOTSPOT_CONN])
+        _disable_captive_redirects()
+        time.sleep(2)
+        for name in saved:
+            if _bring_up_saved(name):
+                log.info("Rejoined home Wi‑Fi via %s", name)
+                return True
+    log.info("Home Wi‑Fi still unavailable — restarting setup hotspot")
+    start_hotspot()
+    return False
+
+
 def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -> dict[str, Any]:
     """Leave hotspot (if any) and join a home Wi‑Fi network (blocking)."""
     if not has_nmcli():
@@ -447,6 +552,9 @@ def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -
             {"busy": True, "phase": "connecting", "ssid": ssid, "error": None, "wifi": None}
         )
 
+    hotspot_was_up = is_hotspot_active()
+    previous = None if hotspot_was_up else current_ssid()
+    previous_conn = None if hotspot_was_up else _active_station_connection()
     try:
         log.info("Connecting to Wi‑Fi SSID=%s", ssid)
         # Tear down hotspot first so the radio can associate as station
@@ -457,7 +565,9 @@ def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -
             time.sleep(2)
 
         # Delete any previous connection with this name to avoid stale PSK
-        _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", ssid])
+        # (but keep the one we're switching away from so we can fall back to it)
+        if ssid != previous:
+            _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", ssid])
 
         cmd = _ensure_sudo_nmcli() + [
             "nmcli",
@@ -473,14 +583,17 @@ def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -
         r = _run(cmd, timeout=90)
         if r.returncode != 0:
             log.error("Wi‑Fi connect failed: %s", r.stderr.strip())
-            try:
-                start_hotspot()
-            except Exception as e:
-                log.error("Failed to restore hotspot after connect error: %s", e)
-            err = (r.stderr or r.stdout or "Failed to connect").strip()
+            if not (previous_conn and _bring_up_saved(previous_conn)):
+                try:
+                    start_hotspot()
+                except Exception as e:
+                    log.error("Failed to restore hotspot after connect error: %s", e)
+            err = _friendly_nmcli_error(r.stderr or r.stdout or "Failed to connect")
+            status = wifi_status()
+            status.pop("connect", None)
             with _lock:
                 _connect_state.update(
-                    {"busy": False, "phase": "failed", "error": err, "wifi": wifi_status()}
+                    {"busy": False, "phase": "failed", "error": err, "wifi": status}
                 )
             raise RuntimeError(err)
 
@@ -494,8 +607,9 @@ def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -
                 break
             time.sleep(0.5)
 
-        set_led_mode("online" if has_internet() else "idle")
+        set_led_mode("online" if has_internet(max_age=0) else "idle")
         status = wifi_status()
+        status.pop("connect", None)
         with _lock:
             _connect_state.update(
                 {"busy": False, "phase": "succeeded", "error": None, "wifi": status}
@@ -745,18 +859,34 @@ def start_wifi_watchdog() -> None:
             ensure_connectivity_or_hotspot()
         except Exception as e:
             log.error("Wi‑Fi watchdog error: %s", e)
-        # Periodically re-check: if we lose station Wi‑Fi later, bring hotspot back
+        # Periodically re-check: if we lose station Wi‑Fi later, bring hotspot back;
+        # while the hotspot sits unused, keep retrying saved home networks.
+        hotspot_idle_since: float | None = None
         while not _watchdog_stop.is_set():
-            _watchdog_stop.wait(60)
+            _watchdog_stop.wait(WATCHDOG_INTERVAL_SECS)
             if _watchdog_stop.is_set():
                 break
             from app.config import load_config
 
             if not load_config().get("wifi_hotspot_auto", True):
                 continue
-            if is_station_connected() or is_hotspot_active():
-                if is_station_connected():
-                    set_led_mode("online" if has_internet() else "idle")
+            if is_hotspot_active():
+                if _hotspot_has_clients() is not False:
+                    hotspot_idle_since = None
+                    continue
+                now = time.monotonic()
+                if hotspot_idle_since is None:
+                    hotspot_idle_since = now
+                elif now - hotspot_idle_since >= HOTSPOT_RETRY_SECS:
+                    hotspot_idle_since = None
+                    try:
+                        retry_home_wifi()
+                    except Exception as e:
+                        log.error("Home Wi‑Fi retry failed: %s", e)
+                continue
+            hotspot_idle_since = None
+            if is_station_connected():
+                set_led_mode("online" if has_internet() else "idle")
                 continue
             log.warning("Lost Wi‑Fi — starting setup hotspot")
             try:

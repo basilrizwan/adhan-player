@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Adhan Player</title>
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/assets/styles.css?v=1.2.10" />
+  <link rel="stylesheet" href="/assets/styles.css?v=1.3.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
@@ -106,27 +106,36 @@
         </div>
 
         <div class="setup-step" data-step="2">
-          <p class="lede">Where should prayer times be calculated?</p>
-          <button type="button" id="btnGeo">Use this phone’s location</button>
-          <p class="hint">We’ll fill latitude, longitude, and timezone. A nearby city is enough.</p>
-          <label>City or place name
-            <input id="locationName" type="text" placeholder="San Ramon, CA" />
+          <h2 class="settings-only">Location</h2>
+          <p class="lede">Where should prayer times be calculated? A nearby city is enough.</p>
+          <form id="locationSearchForm" class="search-row" autocomplete="off">
+            <input id="locationSearch" type="search" placeholder="Search a city, e.g. San Ramon, CA" aria-label="Search for your city" enterkeyhint="search" />
+            <button type="submit" id="btnLocationSearch">Search</button>
+          </form>
+          <div id="locationResults" class="results hidden" role="listbox" aria-label="Matching places"></div>
+          <p class="hint" id="locationSearchHint">You can also paste coordinates, like <code>37.7799, -121.978</code>.</p>
+          <button type="button" class="ghost hidden" id="btnGeo">Use this device’s location</button>
+          <div id="locationPicked" class="picked hidden"></div>
+          <label>Place name
+            <input id="locationName" type="text" maxlength="120" placeholder="San Ramon, CA" />
           </label>
           <div class="grid2">
-            <label>Latitude <input id="latitude" type="number" step="any" /></label>
-            <label>Longitude <input id="longitude" type="number" step="any" /></label>
+            <label>Latitude <input id="latitude" type="number" step="any" min="-90" max="90" inputmode="decimal" /></label>
+            <label>Longitude <input id="longitude" type="number" step="any" min="-180" max="180" inputmode="decimal" /></label>
           </div>
           <label>Timezone
-            <input id="timezone" type="text" placeholder="America/Los_Angeles" />
+            <input id="timezone" type="text" list="tzList" autocapitalize="none" spellcheck="false" placeholder="America/Los_Angeles" />
+            <datalist id="tzList"></datalist>
           </label>
-          <div class="row actions setup-nav">
+          <div class="row actions setup-nav wizard-only">
             <button type="button" class="ghost" data-setup-step="1">Back</button>
             <button type="button" id="btnSetupNext2">Next</button>
           </div>
         </div>
 
         <div class="setup-step" data-step="3">
-          <p class="lede">Choose how times are calculated. You can change this later.</p>
+          <h2 class="settings-only">Calculation</h2>
+          <p class="lede wizard-only">Choose how times are calculated. You can change this later.</p>
           <label>Calculation method
             <select id="method"></select>
           </label>
@@ -140,16 +149,21 @@
             <legend>Which prayers should play?</legend>
             <div id="prayerToggles" class="checks"></div>
           </fieldset>
-          <div class="row actions setup-nav">
+          <div class="row actions setup-nav wizard-only">
             <button type="button" class="ghost" data-setup-step="2">Back</button>
             <button type="button" id="btnSetupNext3">Next</button>
           </div>
         </div>
 
         <div class="setup-step" data-step="4">
-          <p class="lede">Set volume, then finish. You can preview audio on the Audio tab after this.</p>
-          <label>Main volume <input id="setupVolume" type="range" min="0" max="100" /></label>
-          <label>Fajr / night volume <input id="fajrVolume" type="range" min="0" max="100" /></label>
+          <h2 class="settings-only">Sound</h2>
+          <p class="lede wizard-only">Set volume, then finish. You can preview audio on the Audio tab after this.</p>
+          <label><span>Main volume <span class="range-val" id="setupVolumeVal"></span></span>
+            <input id="setupVolume" type="range" min="0" max="100" />
+          </label>
+          <label><span>Fajr / night volume <span class="range-val" id="fajrVolumeVal"></span></span>
+            <input id="fajrVolume" type="range" min="0" max="100" />
+          </label>
           <label>Speaker output
             <select id="audioOutput">
               <option value="auto">Auto</option>
@@ -157,13 +171,13 @@
               <option value="headphone">Headphone / 3.5mm</option>
             </select>
           </label>
-          <div class="banner access-card">
+          <div class="banner access-card wizard-only">
             <p class="access-title">You’re almost done</p>
             <p>After Finish, open <strong>http://adhan.local</strong> anytime on this Wi‑Fi.</p>
             <p class="muted" id="setupBookmarkHint">Bookmark this page, or Add to Home Screen on a phone.</p>
           </div>
           <div class="row actions setup-nav">
-            <button type="button" class="ghost" data-setup-step="3">Back</button>
+            <button type="button" class="ghost wizard-only" data-setup-step="3">Back</button>
             <button type="button" id="btnSaveSetup">Finish setup</button>
           </div>
         </div>
@@ -190,9 +204,14 @@
         <h1>Wi‑Fi</h1>
         <p class="lede">If the Pi can’t join your home network, it starts a setup hotspot so you can configure Wi‑Fi from your phone — no display or SSH needed.</p>
         <div class="card-plain" id="wifiInfo"></div>
+        <label class="toggle">
+          <input type="checkbox" id="hotspotAuto" />
+          Start the setup hotspot automatically when Wi‑Fi is lost
+        </label>
+        <p class="hint">While the hotspot is on and nobody has joined it, the speaker retries your saved home Wi‑Fi every few minutes (for example after a power cut, when the router boots slower than the Pi).</p>
         <div class="row actions">
-          <a class="button-link" id="wifiSetupLink" href="/wifi">Open Wi‑Fi setup page</a>
-          <button type="button" id="btnStartHotspot" class="ghost">Start setup hotspot</button>
+          <a class="button-link" id="wifiSetupLink" href="/wifi">Change Wi‑Fi network</a>
+          <button type="button" id="btnStartHotspot" class="ghost">Start setup hotspot now</button>
         </div>
         <p class="hint">LED cue on a Raspberry Pi: slow blink = waiting on setup hotspot; solid = online.</p>
       </section>
@@ -204,6 +223,7 @@
           <input type="checkbox" id="kahfEnabled" />
           Play Surah Kahf after Maghrib on Thursday
         </label>
+        <p class="hint warn-text hidden" id="kahfMissing">No <code>audio/kahf.mp3</code> on the speaker yet — copy one there or this won’t play.</p>
         <label class="toggle warn-toggle">
           <input type="checkbox" id="sleepEnabled" />
           Sleep outside prayer times (advanced power saving)
@@ -217,10 +237,16 @@
           <input type="checkbox" id="offlineTimes" />
           Offline prayer calculation (recommended)
         </label>
-        <label class="toggle">
-          <input type="checkbox" id="playOnBoot" />
-          Play a short boot chime on startup (not the adhan)
-        </label>
+        <label for="bootSound" class="field-label">Startup sound (short, never the adhan)</label>
+        <div class="search-row">
+          <select id="bootSound">
+            <option value="off">Off</option>
+            <option value="chime">Chime</option>
+            <option value="bell">Bell</option>
+            <option value="takbir">Takbir</option>
+          </select>
+          <button type="button" class="ghost" id="btnPreviewBoot">Preview on speaker</button>
+        </div>
         <label class="toggle">
           <input type="checkbox" id="autoUpdate" />
           Auto-update from GitHub (boot + ~12:08am)
@@ -237,7 +263,8 @@
       </section>
     </main>
   </div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="/assets/qrcode.min.js"></script>
-  <script src="/assets/app.js?v=1.2.10"></script>
+  <script src="/assets/app.js?v=1.3.0"></script>
 </body>
 </html>

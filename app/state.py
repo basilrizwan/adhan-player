@@ -31,7 +31,7 @@ def get_state() -> dict[str, Any]:
     with _lock:
         out = dict(_state)
         mu = _state.get("mute_until")
-        out["muted"] = bool(mu and datetime.now() < mu)
+        out["muted"] = bool(mu and datetime.now().astimezone() < mu)
         out["mute_until"] = mu.isoformat(timespec="seconds") if isinstance(mu, datetime) else mu
         npa = _state.get("next_prayer_at")
         out["next_prayer_at"] = (
@@ -53,7 +53,7 @@ def update_state(**kwargs) -> dict[str, Any]:
 def is_muted() -> bool:
     with _lock:
         mu = _state.get("mute_until")
-        return bool(mu and datetime.now() < mu)
+        return bool(mu and datetime.now().astimezone() < mu)
 
 
 def consume_skip(prayer_name: str) -> bool:
@@ -70,7 +70,8 @@ def consume_skip(prayer_name: str) -> bool:
 
 
 def set_mute_until(until: datetime | None) -> dict[str, Any]:
-    return update_state(mute_until=until)
+    # Store timezone-aware so the browser shows the right wall-clock time.
+    return update_state(mute_until=until.astimezone() if until else None)
 
 
 def request_skip(prayer_name: str | None = None) -> dict[str, Any]:
