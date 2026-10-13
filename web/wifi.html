@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0f3d2e" />
-  <title>Connect Adhan Player to Wi‑Fi</title>
+  <title>Connect Adhan Player to Wi-Fi</title>
   <style>
     :root {
       --bg: #0b1f18;
@@ -75,6 +75,12 @@
       border: 1px solid var(--line); margin: 0.35rem 0; font-weight: 500;
     }
     .ssid-chip.picked { border-color: var(--accent); }
+    .ssid-chip .tag { color: var(--accent); font-size: 0.8rem; margin-left: 0.35rem; }
+    .linkish { display: inline-block; margin-top: 0.9rem; color: var(--muted); font-size: 0.9rem; }
+    .pw-row { display: flex; gap: 0.5rem; }
+    .pw-row input { flex: 1; }
+    .pw-row button { width: auto; margin: 0; padding: 0 0.9rem; }
+    .hidden { display: none !important; }
     .meta { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
     code { background: rgba(255,255,255,0.08); padding: 0.1rem 0.35rem; border-radius: 6px; }
     .row { display: flex; gap: 0.5rem; }
@@ -87,23 +93,27 @@
     <h1 id="title">Connect the speaker</h1>
 
     <section class="step active" data-step="1">
-      <p class="lede">You’re on the speaker’s setup Wi‑Fi. Next you’ll pick your home network so the speaker can join it.</p>
-      <div class="card">
+      <p class="lede" id="introLede">You're on the speaker's setup Wi-Fi. Next you'll pick your home network so the speaker can join it.</p>
+      <div class="card" id="introCard">
         <p class="meta" style="margin:0;">
-          If this page didn’t open by itself, that’s okay. You’re in the right place.
+          If this page didn't open by itself, that's okay. You're in the right place.
           The setup network has <strong>no password</strong>.
         </p>
       </div>
+      <div class="card hidden" id="connectedCard">
+        <p class="meta" style="margin:0;" id="connectedText"></p>
+      </div>
       <button type="button" id="btnStart">Continue</button>
+      <a class="linkish" id="skipLink" href="/?portal=1">Skip Wi-Fi for now and open the speaker settings</a>
     </section>
 
     <section class="step" data-step="2">
-      <p class="lede">Tap your home Wi‑Fi. If you don’t see it, type the name.</p>
+      <p class="lede">Tap your home Wi-Fi. If you don't see it, type the name.</p>
       <div class="card">
-        <div id="netList"><p class="meta">Looking for nearby Wi‑Fi…</p></div>
+        <div id="netList"><p class="meta">Looking for nearby Wi-Fi…</p></div>
         <button type="button" class="ghost" id="btnScan">Refresh list</button>
         <label>Or type the network name
-          <input id="ssid" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Home Wi‑Fi name" />
+          <input id="ssid" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Home Wi-Fi name" />
         </label>
       </div>
       <div class="row">
@@ -113,10 +123,13 @@
     </section>
 
     <section class="step" data-step="3">
-      <p class="lede">Enter the password for <strong id="ssidLabel">your home Wi‑Fi</strong>.</p>
+      <p class="lede" id="passLede">Enter the password for <strong>your home Wi-Fi</strong>.</p>
       <div class="card">
-        <label>Wi‑Fi password
-          <input id="password" type="password" autocomplete="current-password" placeholder="Password" />
+        <label id="passwordField">Wi-Fi password
+          <span class="pw-row">
+            <input id="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="Password" />
+            <button type="button" class="ghost" id="btnShowPw" aria-label="Show password">Show</button>
+          </span>
         </label>
         <label style="display:flex; align-items:center; gap:0.5rem; grid-template-columns:none;">
           <input id="hidden" type="checkbox" style="width:auto;" />
@@ -131,10 +144,10 @@
     </section>
 
     <section class="step" data-step="4">
-      <p class="lede" id="doneLede">The speaker is joining your home Wi-Fi. This phone will disconnect from setup; that’s normal.</p>
+      <p class="lede" id="doneLede">The speaker is joining your home Wi-Fi. This phone will disconnect from setup; that's normal.</p>
       <div class="card">
         <p class="meta" id="doneSteps" style="margin:0;">
-          1. Open this phone’s Wi‑Fi settings<br />
+          1. Open this phone's Wi-Fi settings<br />
           2. Join your <strong>home</strong> network again<br />
           3. Open <code>http://adhan.local</code><br />
           4. Bookmark that page (or Add to Home Screen)
@@ -149,7 +162,7 @@
     const $ = (id) => document.getElementById(id);
     const titles = {
       1: "Connect the speaker",
-      2: "Pick home Wi‑Fi",
+      2: "Pick home Wi-Fi",
       3: "Enter the password",
       4: "Almost done",
     };
@@ -169,15 +182,36 @@
       el.className = "status" + (kind ? " " + kind : "");
     }
 
-    async function api(path, opts) {
-      const res = await fetch(path, {
-        headers: { "Content-Type": "application/json" },
-        ...opts,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
-      return data;
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[c]);
     }
+
+    async function api(path, opts = {}) {
+      const { timeout = 20000, ...rest } = opts;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeout);
+      try {
+        const res = await fetch(path, {
+          headers: { "Content-Type": "application/json" },
+          ...rest,
+          signal: ctrl.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const d = data.detail;
+          const msg = Array.isArray(d) ? d.map((x) => x.msg || x).join("; ") : d || data.message;
+          throw new Error(msg || res.statusText);
+        }
+        return data;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    let networks = [];
+    let stationSsid = null;
 
     async function refreshMeta() {
       try {
@@ -185,29 +219,55 @@
         $("hotspotMeta").textContent = info.hotspot_ssid
           ? `Setup network: ${info.hotspot_ssid} · open, no password`
           : "";
-        if (info.wifi && info.wifi.mode === "station" && info.wifi.ssid) {
-          $("doneLede").textContent = `The speaker is already on “${info.wifi.ssid}”.`;
-          $("doneStatus").textContent = "Open http://adhan.local on your home Wi‑Fi.";
-          showStep(4);
+        const wifi = info.wifi || {};
+        if (wifi.mode === "station" && wifi.ssid) {
+          stationSsid = wifi.ssid;
+          $("title").textContent = "Change Wi-Fi";
+          titles[1] = "Change Wi-Fi";
+          $("introLede").textContent = "Move the speaker to a different Wi-Fi network.";
+          $("introCard").classList.add("hidden");
+          $("connectedText").innerHTML =
+            `The speaker is connected to <strong>${esc(wifi.ssid)}</strong>. ` +
+            `If you switch it to a network this phone isn't on, this page will stop responding. ` +
+            `Join that network too, then open <code>http://adhan.local</code>. ` +
+            `If the new network fails, the speaker goes back to “${esc(wifi.ssid)}”.`;
+          $("connectedCard").classList.remove("hidden");
+          $("btnStart").textContent = "Choose a different network";
+          $("skipLink").textContent = "Back to speaker settings";
+          $("skipLink").href = "/";
         }
       } catch (_) {
         $("hotspotMeta").textContent = "";
       }
     }
 
+    function pickNetwork(ssid) {
+      const net = networks.find((n) => n.ssid === ssid);
+      const open = net && !net.security;
+      $("ssid").value = ssid;
+      $("passwordField").classList.toggle("hidden", !!open);
+      $("passLede").innerHTML = open
+        ? `<strong>${esc(ssid)}</strong> is an open network. No password needed.`
+        : `Enter the password for <strong>${esc(ssid)}</strong>.`;
+      if (open) $("password").value = "";
+      setStatus("");
+      showStep(3);
+      if (!open) $("password").focus();
+    }
+
     async function scan() {
       $("btnScan").disabled = true;
       const list = $("netList");
-      if (!list.querySelector("[data-ssid]")) {
-        list.innerHTML = `<p class="meta">Looking for nearby Wi‑Fi…</p>`;
+      if (!list.querySelector("[data-index]")) {
+        list.innerHTML = `<p class="meta">Looking for nearby Wi-Fi…</p>`;
       }
       try {
-        const data = await api("/api/wifi/networks");
-        const nets = data.networks || [];
+        const data = await api("/api/wifi/networks", { timeout: 60000 });
+        networks = data.networks || [];
         const src = (data.wifi && data.wifi.scan && data.wifi.scan.source) || "";
         const oldNote = document.getElementById("scanCacheNote");
         if (oldNote) oldNote.remove();
-        if (!nets.length) {
+        if (!networks.length) {
           list.innerHTML = `<p class="meta">No list yet. Type your home Wi-Fi name below. It still works.</p>`;
           return;
         }
@@ -217,28 +277,26 @@
             `<p class="meta" id="scanCacheNote">Showing networks seen before the setup hotspot started (the radio often cannot scan while it is an access point).</p>`
           );
         }
-        list.innerHTML = nets
+        list.innerHTML = networks
           .slice(0, 20)
           .map(
-            (n) =>
-              `<button type="button" class="ssid-chip" data-ssid="${n.ssid.replace(/"/g, "&quot;")}">
-                <strong>${n.ssid}</strong>
-                <span class="meta"> · ${n.signal}%${n.security ? " · " + n.security : ""}</span>
+            (n, i) =>
+              `<button type="button" class="ssid-chip" data-index="${i}">
+                <strong>${esc(n.ssid)}</strong>${n.ssid === stationSsid ? '<span class="tag">connected</span>' : ""}
+                <span class="meta"> · ${esc(n.signal)}%${n.security ? " · " + esc(n.security) : " · open"}</span>
               </button>`
           )
           .join("");
-        list.querySelectorAll("[data-ssid]").forEach((btn) => {
+        list.querySelectorAll("[data-index]").forEach((btn) => {
           btn.addEventListener("click", () => {
             list.querySelectorAll(".ssid-chip").forEach((b) => b.classList.remove("picked"));
             btn.classList.add("picked");
-            $("ssid").value = btn.getAttribute("data-ssid");
-            $("ssidLabel").textContent = $("ssid").value;
-            showStep(3);
-            $("password").focus();
+            pickNetwork(networks[Number(btn.dataset.index)].ssid);
           });
         });
       } catch (e) {
-        list.innerHTML = `<p class="meta">Couldn’t list networks. Type your home Wi‑Fi name below.</p>`;
+        if (list.querySelector("[data-index]")) return;
+        list.innerHTML = `<p class="meta">Could not list networks. Type your home Wi-Fi name below.</p>`;
       } finally {
         $("btnScan").disabled = false;
       }
@@ -248,11 +306,21 @@
     $("btnToPass").onclick = () => {
       const ssid = $("ssid").value.trim();
       if (!ssid) {
-        alert("Tap a network, or type the Wi‑Fi name.");
+        alert("Tap a network, or type the Wi-Fi name.");
         return;
       }
-      $("ssidLabel").textContent = ssid;
-      showStep(3);
+      pickNetwork(ssid);
+    };
+    $("ssid").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("btnToPass").click();
+    });
+    $("password").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("btnConnect").click();
+    });
+    $("btnShowPw").onclick = () => {
+      const show = $("password").type === "password";
+      $("password").type = show ? "text" : "password";
+      $("btnShowPw").textContent = show ? "Hide" : "Show";
     };
     document.querySelectorAll("[data-go]").forEach((btn) => {
       btn.addEventListener("click", () => showStep(Number(btn.dataset.go)));
@@ -266,47 +334,74 @@
         setStatus("Go back and pick a network.", "err");
         return;
       }
+      const net = networks.find((n) => n.ssid === ssid);
+      if (!password && !(net && !net.security) && !confirm(`Connect to “${ssid}” without a password?`)) {
+        return;
+      }
       $("btnConnect").disabled = true;
-      setStatus("Connecting the speaker… this phone will drop off setup Wi‑Fi in a moment.");
+      setStatus(
+        stationSsid
+          ? `Switching the speaker to “${ssid}”…`
+          : "Connecting the speaker… this phone will drop off setup Wi-Fi in a moment."
+      );
       try {
         await api("/api/wifi/connect", {
           method: "POST",
+          timeout: 15000,
           body: JSON.stringify({
             ssid,
             password: password || null,
             hidden: $("hidden").checked,
           }),
         });
-        showStep(4);
-        $("doneStatus").textContent = "Waiting for the speaker to join “" + ssid + "”…";
-        for (let i = 0; i < 40; i++) {
-          await new Promise((r) => setTimeout(r, 1500));
-          try {
-            const st = await api("/api/wifi");
-            const phase = st.connect && st.connect.phase;
-            if (phase === "succeeded") {
-              $("doneLede").textContent = "The speaker joined “" + (st.ssid || ssid) + "”.";
-              $("doneStatus").textContent =
-                "Now switch this phone to home Wi‑Fi, then open http://adhan.local";
-              break;
-            }
-            if (phase === "failed") {
-              showStep(3);
-              setStatus((st.connect.error || "Connection failed") + "\nTry again.", "err");
-              break;
-            }
-          } catch (_) {
-            $("doneLede").textContent = "Setup Wi-Fi dropped; that’s normal.";
-            $("doneStatus").textContent =
-              "Join your home Wi‑Fi on this phone, then open http://adhan.local";
-            break;
-          }
-        }
       } catch (e) {
-        setStatus((e.message || "Connection failed") + "\nThe setup network should come back. Try again.", "err");
-      } finally {
-        $("btnConnect").disabled = false;
+        if (e.name === "AbortError" || e instanceof TypeError) {
+          // Hotspot went down before the reply arrived; the join is still under way.
+        } else {
+          $("btnConnect").disabled = false;
+          setStatus((e.message || "Connection failed") + "\nTry again.", "err");
+          return;
+        }
       }
+
+      showStep(4);
+      $("doneLede").textContent = `The speaker is joining “${ssid}”.`;
+      $("doneStatus").textContent = "Waiting for the speaker to join “" + ssid + "”…";
+      let lostContact = false;
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const st = await api("/api/wifi", { timeout: 4000 });
+          const phase = st.connect && st.connect.phase;
+          if (phase === "succeeded") {
+            $("doneLede").textContent = "The speaker joined “" + (st.connect.wifi?.ssid || st.ssid || ssid) + "”.";
+            $("doneStatus").textContent = stationSsid
+              ? "If this phone is on the same network, open http://adhan.local"
+              : "Now switch this phone back to your home Wi-Fi, then open http://adhan.local";
+            $("btnConnect").disabled = false;
+            return;
+          }
+          if (phase === "failed") {
+            showStep(3);
+            setStatus((st.connect.error || "Connection failed") + "\nCheck the password and try again.", "err");
+            $("btnConnect").disabled = false;
+            return;
+          }
+          if (lostContact) {
+            $("doneStatus").textContent = "Back in touch with the speaker. Still connecting…";
+          }
+        } catch (_) {
+          lostContact = true;
+          $("doneLede").textContent = stationSsid
+            ? `The speaker is moving to “${ssid}”.`
+            : "Setup Wi-Fi dropped; that's normal.";
+          $("doneStatus").textContent = stationSsid
+            ? `Join “${ssid}” on this phone, then open http://adhan.local`
+            : "Join your home Wi-Fi on this phone, then open http://adhan.local\n" +
+              "(If the speaker could not join, the setup network Adhan-… comes back in a minute. Rejoin it and this page will show what went wrong.)";
+        }
+      }
+      $("btnConnect").disabled = false;
     });
 
     refreshMeta();

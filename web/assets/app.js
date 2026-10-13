@@ -13,6 +13,7 @@
   };
 
   let formsHydrated = false;
+  let advancedDirty = false;
   let setupStep = 1;
 
   async function api(path, opts = {}) {
@@ -183,6 +184,10 @@
       ]
         .filter(Boolean)
         .join("\n");
+    }
+    const hotspotAuto = $("#hotspotAuto");
+    if (hotspotAuto && document.activeElement !== hotspotAuto) {
+      hotspotAuto.checked = cfg.wifi_hotspot_auto !== false;
     }
 
     renderTimes();
@@ -440,15 +445,28 @@
     return out;
   }
 
+  function renderKahfHint() {
+    const hint = $("#kahfMissing");
+    if (!hint) return;
+    const files = state.audioFiles || [];
+    const kahfPath = state.config?.kahf_audio_file || "audio/kahf.mp3";
+    const missing = !files.some((f) => f.path === kahfPath);
+    hint.classList.toggle("hidden", !(missing && $("#kahfEnabled")?.checked));
+  }
+
   function fillAdvanced() {
     const c = state.config || {};
-    $("#deviceName").value = c.device_name || "Adhan Player";
-    $("#kahfEnabled").checked = !!c.kahf_enabled;
-    $("#sleepEnabled").checked = !!c.sleep_enabled;
-    $("#offlineTimes").checked = c.use_offline_times !== false;
-    $("#playOnBoot").checked = c.play_on_boot !== false;
-    const autoEl = $("#autoUpdate");
-    if (autoEl) autoEl.checked = c.auto_update !== false;
+    if (!advancedDirty) {
+      $("#deviceName").value = c.device_name || "Adhan Player";
+      $("#kahfEnabled").checked = !!c.kahf_enabled;
+      $("#sleepEnabled").checked = !!c.sleep_enabled;
+      $("#offlineTimes").checked = c.use_offline_times !== false;
+      const bootEl = $("#bootSound");
+      if (bootEl) bootEl.value = c.play_on_boot === false ? "off" : c.boot_sound || "chime";
+      const autoEl = $("#autoUpdate");
+      if (autoEl) autoEl.checked = c.auto_update !== false;
+    }
+    renderKahfHint();
     const info = $("#updateInfo");
     const u = (state.status && state.status.update) || {};
     if (info) {
@@ -531,7 +549,10 @@
     }
   }
 
-  $("#btnGeo").onclick = () => {
+  if (window.isSecureContext && navigator.geolocation && $("#btnGeo")) {
+    $("#btnGeo").classList.remove("hidden");
+  }
+  if ($("#btnGeo")) $("#btnGeo").onclick = () => {
     if (!navigator.geolocation) {
       alert("This browser can’t share location. Type a city and pick a suggestion, or enter coordinates.");
       return;
@@ -808,9 +829,24 @@
     }
   });
 
+  const hotspotAutoEl = $("#hotspotAuto");
+  if (hotspotAutoEl) {
+    hotspotAutoEl.onchange = async () => {
+      await patch({ wifi_hotspot_auto: hotspotAutoEl.checked });
+    };
+  }
+
   const btnHotspot = $("#btnStartHotspot");
   if (btnHotspot) {
     btnHotspot.onclick = async () => {
+      const wifi = (state.status && state.status.wifi) || {};
+      const ok = confirm(
+        "Start the setup hotspot now?\n\n" +
+          (wifi.ssid ? `The speaker will leave “${wifi.ssid}” and ` : "The speaker will ") +
+          "this page will stop responding. To get back in, join the open Wi-Fi " +
+          `“${wifi.hotspot_ssid || "Adhan-XXXX"}” and open http://10.42.0.1:8080/wifi.`
+      );
+      if (!ok) return;
       try {
         await api("/api/wifi/hotspot", { method: "POST", body: "{}" });
         await refresh();
@@ -818,6 +854,36 @@
       } catch (e) {
         alert(e.message || "Could not start hotspot (needs NetworkManager on the Pi).");
       }
+    };
+  }
+
+  const advancedView = $("#view-advanced");
+  if (advancedView) {
+    const mark = () => {
+      advancedDirty = true;
+    };
+    advancedView.addEventListener("input", mark);
+    advancedView.addEventListener("change", mark);
+  }
+  const kahfEl = $("#kahfEnabled");
+  if (kahfEl) kahfEl.addEventListener("change", renderKahfHint);
+
+  const btnPreviewBoot = $("#btnPreviewBoot");
+  if (btnPreviewBoot) {
+    btnPreviewBoot.onclick = async () => {
+      const sound = $("#bootSound") ? $("#bootSound").value : "chime";
+      if (sound === "off") {
+        alert("Pick a sound to preview.");
+        return;
+      }
+      await api("/api/play", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "file",
+          path: `audio/boot-${sound}.mp3`,
+          volume: (state.config && state.config.boot_volume) || 45,
+        }),
+      });
     };
   }
 
@@ -834,17 +900,19 @@
         return;
       }
     }
+    const bootSound = $("#bootSound") ? $("#bootSound").value : "chime";
     await patch({
       device_name: $("#deviceName").value.trim() || "Adhan Player",
       kahf_enabled: $("#kahfEnabled").checked,
       sleep_enabled: $("#sleepEnabled").checked,
       use_offline_times: $("#offlineTimes").checked,
-      play_on_boot: $("#playOnBoot").checked,
-      boot_sound: $("#playOnBoot").checked ? "chime" : "off",
+      play_on_boot: bootSound !== "off",
+      boot_sound: bootSound,
       auto_update: $("#autoUpdate") ? $("#autoUpdate").checked : true,
       update_on_boot: $("#autoUpdate") ? $("#autoUpdate").checked : true,
       update_at_midnight: $("#autoUpdate") ? $("#autoUpdate").checked : true,
     });
+    advancedDirty = false;
     alert("Advanced settings saved.");
   };
 

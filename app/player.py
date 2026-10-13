@@ -13,13 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from app.audio_slots import profile_for
-from app.config import BASE_DIR, PRAYER_NAMES, load_config
+from app.config import BASE_DIR, PRAYER_NAMES, load_config, on_config_change
 from app.dua import resolve_dua_path
 from app.state import consume_skip, is_muted, update_state
 from app.times import (
+    _tz,
     check_clock_health,
     get_day_times,
     get_today_times,
+    local_now,
+    local_today,
     midnight_refresh,
 )
 
@@ -29,9 +32,12 @@ SLEEP_AFTER_ADHAN_SECS = 60
 WAKE_BEFORE_PRAYER_SECS = 180
 
 _shutdown = threading.Event()
+_reschedule = threading.Event()
 _play_lock = threading.Lock()
 _current_proc: subprocess.Popen | None = None
 _scheduler_thread: threading.Thread | None = None
+_stop_generation = 0
+_on_change_registered = False
 
 
 def request_shutdown() -> None:
@@ -40,8 +46,9 @@ def request_shutdown() -> None:
 
 
 def stop_playback() -> None:
-    global _current_proc
+    global _current_proc, _stop_generation
     with _play_lock:
+        _stop_generation += 1
         if _current_proc and _current_proc.poll() is None:
             try:
                 _current_proc.terminate()
@@ -147,10 +154,9 @@ def enter_sleep(wake_timestamp: float) -> None:
     power_save_off()
 
 
-def parse_time(time_str: str, target_date: date | None = None) -> datetime:
-    d = target_date or date.today()
+def parse_time(time_str: str, target_date: date, config: dict[str, Any]) -> datetime:
     h, m = map(int, time_str.split(":"))
-    return datetime(d.year, d.month, d.day, h, m)
+    return datetime(target_date.year, target_date.month, target_date.day, h, m, tzinfo=_tz(config))
 
 
 def _volume_for(prayer_name: str, config: dict[str, Any]) -> int:
@@ -226,7 +232,7 @@ def play_file(
             playing=False,
             playing_label=None,
             last_played=label,
-            last_played_at=datetime.now(),
+            last_played_at=datetime.now().astimezone(),
         )
 
 
@@ -260,14 +266,21 @@ def play_adhan(prayer_name: str, config: dict[str, Any] | None = None) -> None:
         timeout = 600
         label = f"Adhan for {prayer_name}"
 
+    generation = _stop_generation
     play_file(slot["adhan_file"], label=label, volume=slot["adhan_volume"], config=cfg, timeout=timeout)
 
     # Post-adhan dua (never after Kahf or boot chime)
     allow_dua = prayer_name in PRAYER_NAMES + ["Test"]
     if not is_kahf and slot["dua_enabled"] and allow_dua:
+        if generation != _stop_generation or _shutdown.is_set():
+            log.info("Stop pressed; skipping dua after %s", label)
+            return
         delay = float(cfg.get("dua_delay_seconds", 2))
         if delay > 0 and not _shutdown.is_set():
             time.sleep(delay)
+        if generation != _stop_generation or _shutdown.is_set():
+            log.info("Stop pressed; skipping dua after %s", label)
+            return
         dua_path = resolve_dua_path(cfg, slot.get("dua_id"))
         if dua_path:
             dua_label = "Fajr dua after adhan" if prayer_name == "Fajr" else "Dua after adhan"
@@ -282,11 +295,25 @@ def play_adhan(prayer_name: str, config: dict[str, Any] | None = None) -> None:
 
 def wait_until(target: datetime) -> bool:
     while not _shutdown.is_set():
-        remaining = (target - datetime.now()).total_seconds()
+        remaining = (target - datetime.now(target.tzinfo)).total_seconds()
         if remaining <= 0:
             return True
         time.sleep(min(30, remaining))
     return False
+
+
+def _wait_for_prayer(target: datetime) -> str:
+    """Block until target. Returns "due", "reschedule" (config changed) or "shutdown"."""
+    while not _shutdown.is_set():
+        remaining = (target - datetime.now(target.tzinfo)).total_seconds()
+        if remaining <= 0:
+            return "due"
+        if _reschedule.wait(min(30, remaining)):
+            _reschedule.clear()
+            if datetime.now(target.tzinfo) >= target:
+                return "due"
+            return "reschedule"
+    return "shutdown"
 
 
 def append_kahf_if_scheduled(
@@ -305,9 +332,9 @@ def append_kahf_if_scheduled(
     delay = config.get("kahf_delay_minutes", 30)
     length = config.get("kahf_length_minutes", 30)
     margin = config.get("kahf_isha_margin_minutes", 5)
-    kahf_dt = parse_time(times["Maghrib"], day) + timedelta(minutes=delay)
+    kahf_dt = parse_time(times["Maghrib"], day, config) + timedelta(minutes=delay)
     kahf_end = kahf_dt + timedelta(minutes=length)
-    isha_dt = parse_time(times["Isha"], day)
+    isha_dt = parse_time(times["Isha"], day, config)
 
     if kahf_end + timedelta(minutes=margin) <= isha_dt:
         schedule.append(("Kahf", kahf_dt))
@@ -324,12 +351,12 @@ def build_full_schedule(config: dict[str, Any]) -> list[tuple[str, datetime]]:
     enabled = set(config.get("enabled_prayers", PRAYER_NAMES))
     schedule: list[tuple[str, datetime]] = []
 
-    today = date.today()
+    today = local_today(config)
     today_times = get_today_times(config)
     if today_times:
         for name in PRAYER_NAMES:
             if name in enabled:
-                schedule.append((name, parse_time(today_times[name], today)))
+                schedule.append((name, parse_time(today_times[name], today, config)))
         append_kahf_if_scheduled(schedule, today, today_times, config)
 
     tomorrow = today + timedelta(days=1)
@@ -337,25 +364,30 @@ def build_full_schedule(config: dict[str, Any]) -> list[tuple[str, datetime]]:
     if tomorrow_times:
         for name in PRAYER_NAMES:
             if name in enabled:
-                schedule.append((name, parse_time(tomorrow_times[name], tomorrow)))
+                schedule.append((name, parse_time(tomorrow_times[name], tomorrow, config)))
         append_kahf_if_scheduled(schedule, tomorrow, tomorrow_times, config)
 
     schedule.sort(key=lambda item: item[1])
     return schedule
 
 
-def find_next_prayer(schedule: list[tuple[str, datetime]]):
-    now = datetime.now()
+def find_next_prayer(schedule: list[tuple[str, datetime]], config: dict[str, Any]):
+    now = local_now(config)
     for name, dt in schedule:
         if dt > now:
             return name, dt
     return None, None
 
 
+def refresh_schedule(config: dict[str, Any] | None = None) -> list[tuple[str, datetime]]:
+    """Recompute today's times and the upcoming schedule for the API/UI."""
+    return _publish_schedule(config or load_config())
+
+
 def _publish_schedule(config: dict[str, Any]) -> list[tuple[str, datetime]]:
     schedule = build_full_schedule(config)
     today_times = get_today_times(config) or {}
-    name, dt = find_next_prayer(schedule)
+    name, dt = find_next_prayer(schedule, config)
     clock_ok, clock_warning = check_clock_health()
     update_state(
         schedule=[{"name": n, "at": d.isoformat(timespec="seconds")} for n, d in schedule],
@@ -387,26 +419,28 @@ def scheduler_loop() -> None:
     last_refresh_date = None
 
     while not _shutdown.is_set():
+        _reschedule.clear()
         config = load_config()
         sleep_enabled = config.get("sleep_enabled", False)
-        today = date.today()
+        today = local_today(config)
         if last_refresh_date != today:
             if last_refresh_date is not None:
                 midnight_refresh(config)
             last_refresh_date = today
 
         schedule = _publish_schedule(config)
-        prayer_name, prayer_dt = find_next_prayer(schedule)
+        prayer_name, prayer_dt = find_next_prayer(schedule, config)
         if not prayer_name:
             log.info("No upcoming prayers found, sleeping 30 minutes...")
-            _shutdown.wait(1800)
+            if _wait_for_prayer(local_now(config) + timedelta(minutes=30)) == "shutdown":
+                break
             continue
 
-        log.info("Next: %s at %s", prayer_name, prayer_dt.strftime("%H:%M (%A)"))
+        log.info("Next: %s at %s", prayer_name, prayer_dt.strftime("%H:%M %Z (%A)"))
         wake_dt = prayer_dt - timedelta(seconds=WAKE_BEFORE_PRAYER_SECS)
 
         if sleep_enabled and is_pi():
-            secs_until_wake = (wake_dt - datetime.now()).total_seconds()
+            secs_until_wake = (wake_dt - local_now(config)).total_seconds()
             if secs_until_wake > SLEEP_AFTER_ADHAN_SECS:
                 log.info(
                     "Sleeping in %ss, wake at %s (UI offline while asleep)",
@@ -418,10 +452,15 @@ def scheduler_loop() -> None:
                     break
                 enter_sleep(wake_dt.timestamp())
 
-        if not wait_until(prayer_dt):
+        outcome = _wait_for_prayer(prayer_dt)
+        if outcome == "shutdown":
             break
-        if _shutdown.is_set():
-            break
+        if outcome == "reschedule":
+            log.info("Settings changed; recalculating schedule")
+            continue
+        config = load_config()
+        if prayer_name in PRAYER_NAMES and prayer_name not in config.get("enabled_prayers", PRAYER_NAMES):
+            continue
 
         if is_muted():
             log.info("Muted; skipping %s", prayer_name)
@@ -436,10 +475,13 @@ def scheduler_loop() -> None:
 
 
 def start_scheduler() -> None:
-    global _scheduler_thread
+    global _scheduler_thread, _on_change_registered
     if _scheduler_thread and _scheduler_thread.is_alive():
         return
     _shutdown.clear()
+    if not _on_change_registered:
+        on_config_change(lambda _cfg: _reschedule.set())
+        _on_change_registered = True
     _scheduler_thread = threading.Thread(target=scheduler_loop, name="adhan-scheduler", daemon=True)
     _scheduler_thread.start()
 

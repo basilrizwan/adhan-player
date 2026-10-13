@@ -14,4 +14,7 @@ def tmp_config(tmp_path, monkeypatch):
     cache.mkdir()
     monkeypatch.setattr(config_mod, "CONFIG_PATH", path)
     monkeypatch.setattr(config_mod, "CACHE_DIR", cache)
+    import app.times as times_mod
+
+    monkeypatch.setattr(times_mod, "CACHE_DIR", cache)
     return path
