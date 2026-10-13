@@ -1,12 +1,18 @@
-"""Captive-portal detection redirects when the setup hotspot is active."""
+"""Captive-portal detection when the setup hotspot is active.
+
+Phones probe well-known URLs to decide whether a network has internet.
+On the setup AP we answer those probes with the Wi-Fi setup page (HTTP 200)
+instead of a 302, because several iOS/Android builds ignore or mishandle
+redirects during captive detection.
+"""
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import RedirectResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+
+from app.config import WEB_DIR
 
 # Paths phones hit to detect captive portals
 CAPTIVE_PATHS = {
@@ -33,6 +39,8 @@ CAPTIVE_HOST_HINTS = (
     "www.msftncsi.com",
     "detectportal.firefox.com",
     "network-test.debian.org",
+    "neverssl.com",
+    "captive.router",
 )
 
 LOCAL_HOSTS = {
@@ -44,11 +52,34 @@ LOCAL_HOSTS = {
     "0.0.0.0",
 }
 
+# Tiny landing if wifi.html is missing. Must not contain the word Success
+# (iOS treats that as "already online").
+_FALLBACK_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0;url=/wifi" />
+  <title>Adhan Player Wi-Fi setup</title>
+</head>
+<body>
+  <p>Continue to <a href="/wifi">Wi-Fi setup</a>.</p>
+</body>
+</html>
+"""
+
 
 def _host_only(host_header: str | None) -> str:
     if not host_header:
         return ""
     return host_header.split(":")[0].strip().lower()
+
+
+def _wifi_setup_response() -> Response:
+    path = WEB_DIR / "wifi.html"
+    if path.exists():
+        return FileResponse(path, media_type="text/html; charset=utf-8")
+    return HTMLResponse(_FALLBACK_HTML, status_code=200)
 
 
 class CaptivePortalMiddleware(BaseHTTPMiddleware):
@@ -66,13 +97,12 @@ class CaptivePortalMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        # Lazy import so non-Pi / missing nmcli still serves the app
         try:
-            from app.wifi import HOTSPOT_IP, is_hotspot_active
+            from app.wifi import hotspot_active_cached
         except Exception:
             return await call_next(request)
 
-        if not is_hotspot_active():
+        if not hotspot_active_cached():
             return await call_next(request)
 
         host = _host_only(request.headers.get("host"))
@@ -80,17 +110,14 @@ class CaptivePortalMiddleware(BaseHTTPMiddleware):
         is_captive_host = any(h in host for h in CAPTIVE_HOST_HINTS) if host else False
         is_captive_path = path in CAPTIVE_PATHS or path.startswith("/fwlink")
 
-        # Android generate_204 expects 204 when online; when captive, redirect
-        if path in {"/generate_204", "/gen_204"} or is_captive_host or (not is_local and is_captive_path):
-            return RedirectResponse(url=f"http://{HOTSPOT_IP}:8080/wifi", status_code=302)
+        # Detection URLs and unknown hosts: serve the setup page (HTTP 200).
+        if is_captive_host or is_captive_path or (host and not is_local):
+            if path == "/" and request.query_params.get("portal") == "1":
+                return await call_next(request)
+            return _wifi_setup_response()
 
-        # Unknown Host headers while on hotspot → send to wifi setup
-        if host and not is_local:
-            return RedirectResponse(url=f"http://{HOTSPOT_IP}:8080/wifi", status_code=302)
-
-        # Root on hotspot IP should prefer wifi setup until configured
+        # Root on the hotspot IP / mDNS name prefers Wi-Fi setup until configured.
         if path == "/" and (host in {"10.42.0.1", "adhan.local", "adhan"} or not host):
-            # Allow ?portal=1 to reach full UI
             if request.query_params.get("portal") != "1":
                 return RedirectResponse(url="/wifi", status_code=302)
 

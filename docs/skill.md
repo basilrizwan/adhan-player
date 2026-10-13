@@ -43,7 +43,13 @@ curl -s http://adhan.local:8080/api/status
 
 If DNS fails, retry with the IP from the user’s QR code / router.
 
-### 2. Choose post-adhan dua
+### 2. Choose location (optional search)
+
+```bash
+curl -s "http://adhan.local:8080/api/geocode/search?q=Austin"
+```
+
+### 3. Choose post-adhan dua
 
 ```bash
 curl -s http://adhan.local:8080/api/duas | jq .
@@ -54,7 +60,7 @@ curl -s http://adhan.local:8080/api/play -X POST \
 
 Repeat for `with-translation`, `slow-teach`, `masjid-wording`. Ask which they prefer.
 
-### 3. Apply settings
+### 4. Apply settings
 
 ```bash
 curl -s http://adhan.local:8080/api/config -X PATCH \
@@ -71,17 +77,20 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
     "fajr_volume": 50,
     "dua_enabled": true,
     "dua_id": "<chosen id>",
+    "dua_volume": 80,
+    "fajr_dua_id": "<chosen id or leave same>",
+    "fajr_dua_volume": 50,
     "sleep_enabled": false
   }'
 ```
 
-### 4. Verify schedule
+### 5. Verify schedule
 
 ```bash
 curl -s http://adhan.local:8080/api/schedule | jq .
 ```
 
-### 5. Daily controls
+### 6. Daily controls
 
 ```bash
 # Mute for an hour

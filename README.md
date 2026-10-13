@@ -1,6 +1,6 @@
 # Adhan Player
 
-Local-first Raspberry Pi speaker that plays the adhan at prayer times — with a phone-friendly setup portal, post-adhan dua previews, and HTTP APIs so any AI agent on your LAN can configure it.
+Local-first Raspberry Pi speaker that plays the adhan at prayer times, with a phone-friendly setup portal, post-adhan dua previews, and HTTP APIs so any AI agent on your LAN can configure it.
 
 No cloud account. Each home runs its own device.
 
@@ -11,7 +11,7 @@ No cloud account. Each home runs its own device.
 - Post-adhan dua catalog with browser + speaker preview
 - Mute / skip / test play / night (Fajr) volume
 - mDNS discovery (`_adhan._tcp`)
-- **Headless Wi‑Fi onboarding**: if offline, auto-starts `Adhan-XXXX` hotspot + captive `/wifi` page
+- **Headless Wi-Fi onboarding**: if offline, auto-starts `Adhan-XXXX` hotspot + captive `/wifi` page. See [`docs/hotspot-testing.md`](docs/hotspot-testing.md).
 - ACT LED cues (slow blink = setup hotspot; solid = online)
 - Agent docs: [`llms.txt`](llms.txt), [`AGENTS.md`](AGENTS.md), [`docs/skill.md`](docs/skill.md), OpenAPI `/docs`
 - Thin Expo companion app under [`mobile/AdhanCompanion`](mobile/AdhanCompanion)
@@ -34,7 +34,7 @@ No cloud account. Each home runs its own device.
 **If Imager Wi‑Fi worked** → open **http://adhan.local:8080**
 
 **If not on a network** (no display needed):
-1. On your phone, join Wi‑Fi **`Adhan-XXXX`** (last 4 of the Pi MAC — **open, no password**)  
+1. On your phone, join Wi-Fi **`Adhan-XXXX`** (last 4 of the Pi MAC, **open, no password**)  
 2. Open **http://10.42.0.1:8080/wifi** (or the captive “Sign in to network” sheet)  
 3. Pick/enter home Wi‑Fi → Connect  
 4. Switch the phone back to home Wi‑Fi → **http://adhan.local:8080**
@@ -68,6 +68,13 @@ pip install -r requirements.txt
 python -m app.main
 ```
 
+Tests:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
 Open http://127.0.0.1:8080
 
 Test adhan+dua once:
@@ -94,9 +101,10 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
 
 ## Important defaults
 
-- **`sleep_enabled: false`** (always on) so the portal stays online — Advanced can enable sleep, but the UI warns that `adhan.local` / Wi‑Fi go offline while suspended
+- **`sleep_enabled: false`** (always on) so the portal stays online. Advanced can enable sleep, but the UI warns that `adhan.local` / Wi-Fi go offline while suspended.
 - Hostname + Avahi so every install is **`http://adhan.local`** (port 80 is redirected to 8080; `:8080` still works)
-- Setup: phone GPS or manual lat/long; **Times** tab shows today’s schedule
+- Setup: type a city (suggestions fill lat/lon/timezone), phone GPS, or manual coordinates. **Times** tab shows today’s schedule
+- Audio tab: separate Fajr/regular adhan and dua recordings plus volumes (old single settings migrate automatically)
 ## Auto-update
 
 The Pi pulls `main` from [github.com/basilrizwan/adhan-player](https://github.com/basilrizwan/adhan-player) **on boot** (after ~90s) and **around 12:08am** local time. `config.json` and your adhan/fajr/kahf files are kept.

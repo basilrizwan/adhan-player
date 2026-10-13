@@ -1,3 +1,3 @@
-"""Adhan Player — local-first prayer-time speaker."""
+"""Adhan Player: local-first prayer-time speaker."""
 
-__version__ = "1.2.10"
+__version__ = "1.3.0"

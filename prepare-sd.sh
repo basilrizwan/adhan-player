@@ -1,5 +1,5 @@
 #!/bin/bash
-# prepare-sd.sh — Run on your Mac after flashing with Raspberry Pi Imager.
+# prepare-sd.sh: run on your Mac after flashing with Raspberry Pi Imager.
 # Imager handles WiFi, SSH, and user creation.
 # This script adds the adhan player files and a setup hook to firstrun.
 #
@@ -8,11 +8,11 @@
 #      - Configure WiFi, SSH, username/password in Imager settings
 #   2. Leave the SD card inserted (re-insert if auto-ejected)
 #   3. Run: ./prepare-sd.sh
-#   4. Eject SD card, plug into Pi, power on — done.
+#   4. Eject SD card, plug into Pi, power on. Done.
 
 set -e
 
-echo "=== Adhan Player — SD Card Prep ==="
+echo "=== Adhan Player SD Card Prep ==="
 echo ""
 
 BOOT_VOL=""
@@ -101,9 +101,13 @@ chmod +x "\$USER_HOME/adhan-player/setup.sh" "\$USER_HOME/adhan-player/scripts/"
 
 echo "Installing system packages..."
 apt-get update -qq
-apt-get install -y -qq mpv python3-venv curl git avahi-daemon avahi-utils network-manager iptables > /dev/null 2>&1
+apt-get install -y -qq mpv python3-venv curl git avahi-daemon avahi-utils network-manager iptables dnsmasq-base rfkill iw > /dev/null 2>&1
+systemctl disable --now dhcpcd 2>/dev/null || true
 systemctl enable NetworkManager 2>/dev/null || true
 systemctl start NetworkManager 2>/dev/null || true
+nmcli radio wifi on 2>/dev/null || true
+nmcli device set wlan0 managed yes 2>/dev/null || true
+iw dev wlan0 set power_save off 2>/dev/null || true
 
 echo "Setting up Python environment..."
 sudo -u ${PI_USER} python3 -m venv "\$USER_HOME/adhan-player/venv"
@@ -139,6 +143,7 @@ ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/tvservice
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/iw
+${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/rfkill
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/iptables
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 ${PI_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager
@@ -183,8 +188,8 @@ echo "Creating first-boot service..."
 cat > "$BOOT_VOL/adhan-setup.service" << 'SVC'
 [Unit]
 Description=Adhan Player First-Boot Setup
-After=network-online.target
-Wants=network-online.target
+After=NetworkManager.service
+Wants=NetworkManager.service
 ConditionPathExists=/boot/firmware/adhan-setup.sh
 
 [Service]

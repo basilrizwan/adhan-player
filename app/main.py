@@ -1,9 +1,10 @@
-"""FastAPI entrypoint — serves portal UI, REST API, and starts the scheduler."""
+"""FastAPI entrypoint: portal UI, REST API, and the scheduler."""
 
 from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -38,6 +39,11 @@ log = logging.getLogger("adhan")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    testing = os.environ.get("ADHAN_TESTING") == "1"
+    if testing:
+        log.info("Adhan Player %s test mode (background services off)", __version__)
+        yield
+        return
     install_signal_handlers()
     cfg = load_config()
     log.info("Adhan Player %s starting (setup_complete=%s)", __version__, cfg.get("setup_complete"))

@@ -34,6 +34,9 @@ Then the phone rejoins home Wi‑Fi and uses `http://adhan.local:8080`.
 - GET  /api/schedule
 - GET  /api/duas
 - GET  /api/audio
+- GET  /api/geocode/search?q=
+- GET  /api/geocode/reverse?lat=&lon=
+- GET  /api/geocode/timezone?lat=&lon=
 - POST /api/play
 - POST /api/stop
 - POST /api/skip
@@ -76,6 +79,9 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
     "dua_id": "short-authentic",
     "volume": 80,
     "fajr_volume": 45,
+    "dua_volume": 80,
+    "fajr_dua_id": "short-authentic",
+    "fajr_dua_volume": 45,
     "sleep_enabled": false
   }'
 ```

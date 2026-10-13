@@ -1,4 +1,4 @@
-"""Wi‑Fi / hotspot helpers via NetworkManager (nmcli) for headless setup."""
+"""Wi-Fi / hotspot helpers via NetworkManager (nmcli) for headless setup."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ log = logging.getLogger("adhan.wifi")
 HOTSPOT_CONN = "adhan-setup-hotspot"
 SSID_PREFIX = "Adhan"
 HOTSPOT_IP = "10.42.0.1"
+HOTSPOT_CIDR = "10.42.0.1/24"
+# 2.4 GHz channel 6 is widely usable on Pi radios and phone clients.
+HOTSPOT_CHANNEL = "6"
 
 _lock = threading.RLock()
 _watchdog_thread: threading.Thread | None = None
@@ -32,6 +35,9 @@ _connect_state: dict[str, Any] = {
     "error": None,
     "wifi": None,
 }
+_hotspot_cache = {"ts": 0.0, "active": False}
+_HOTSPOT_CACHE_TTL = 1.5
+_last_scan_meta: dict[str, Any] = {"source": "none", "count": 0}
 
 
 def _run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
@@ -49,6 +55,17 @@ def _run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
 
 def has_nmcli() -> bool:
     return _run(["which", "nmcli"]).returncode == 0
+
+
+def _ensure_sudo_nmcli() -> list[str]:
+    """Prefix with sudo when not root."""
+    if os.geteuid() == 0:
+        return []
+    return ["sudo", "-n"]
+
+
+def _nm(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    return _run(_ensure_sudo_nmcli() + args, timeout=timeout)
 
 
 def mac_suffix() -> str:
@@ -74,10 +91,29 @@ def hotspot_password() -> str:
     return ""
 
 
+def wait_for_networkmanager(timeout: float = 30.0) -> bool:
+    """Wait until nmcli can talk to NetworkManager (boot race)."""
+    if not has_nmcli():
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r = _nm(["nmcli", "general", "status"], timeout=8)
+        if r.returncode == 0 and r.stdout.strip():
+            return True
+        time.sleep(1)
+    log.warning("NetworkManager did not become ready within %ss", int(timeout))
+    return False
+
+
+def _invalidate_hotspot_cache() -> None:
+    with _lock:
+        _hotspot_cache["ts"] = 0.0
+
+
 def is_hotspot_active() -> bool:
     if not has_nmcli():
         return False
-    r = _run(["nmcli", "-t", "-f", "NAME,DEVICE,TYPE", "connection", "show", "--active"])
+    r = _nm(["nmcli", "-t", "-f", "NAME,DEVICE,TYPE", "connection", "show", "--active"])
     for line in r.stdout.splitlines():
         parts = line.split(":")
         if parts and parts[0] == HOTSPOT_CONN:
@@ -85,28 +121,45 @@ def is_hotspot_active() -> bool:
     return False
 
 
+def hotspot_active_cached(ttl: float = _HOTSPOT_CACHE_TTL) -> bool:
+    """Cached hotspot check so captive middleware does not shell out on every request."""
+    now = time.time()
+    with _lock:
+        if now - _hotspot_cache["ts"] < ttl:
+            return bool(_hotspot_cache["active"])
+    active = is_hotspot_active()
+    with _lock:
+        _hotspot_cache["ts"] = now
+        _hotspot_cache["active"] = active
+    return active
+
+
 def wifi_device() -> str | None:
     if not has_nmcli():
         return None
-    r = _run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
+    r = _nm(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
+    fallback = None
     for line in r.stdout.splitlines():
         parts = line.split(":")
         if len(parts) >= 3 and parts[1] == "wifi":
+            state = parts[2]
+            if "unmanaged" in state:
+                fallback = parts[0]
+                continue
             return parts[0]
-    return "wlan0"
+    return fallback or "wlan0"
 
 
 def current_ssid() -> str | None:
     if not has_nmcli():
         return None
-    r = _run(["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"])
+    r = _nm(["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"])
     for line in r.stdout.splitlines():
-        # ACTIVE:SSID — SSID may contain colons rarely; split once
+        # ACTIVE:SSID. SSID may contain colons rarely; split once
         if line.startswith("yes:"):
             ssid = line[4:]
             return ssid or None
-    # Fallback: connection name on wifi device
-    r2 = _run(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"])
+    r2 = _nm(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"])
     for line in r2.stdout.splitlines():
         parts = line.split(":")
         if len(parts) >= 3 and parts[1] == "802-11-wireless" and parts[0] != HOTSPOT_CONN:
@@ -120,7 +173,7 @@ def has_default_route() -> bool:
 
 
 def has_internet(timeout: float = 3.0) -> bool:
-    """Cheap connectivity check — DNS or TCP to a public resolver."""
+    """Cheap connectivity check: DNS or TCP to a public resolver."""
     import socket
 
     try:
@@ -138,7 +191,7 @@ def has_internet(timeout: float = 3.0) -> bool:
 
 
 def is_station_connected() -> bool:
-    """Connected to a normal Wi‑Fi AP (not our setup hotspot)."""
+    """Connected to a normal Wi-Fi AP (not our setup hotspot)."""
     if is_hotspot_active():
         return False
     ssid = current_ssid()
@@ -152,11 +205,41 @@ def connect_progress() -> dict[str, Any]:
         return dict(_connect_state)
 
 
+def _has_hotspot_ip(dev: str | None = None) -> bool:
+    iface = dev or wifi_device() or "wlan0"
+    r = _run(["ip", "-4", "addr", "show", "dev", iface])
+    return HOTSPOT_IP in (r.stdout or "")
+
+
+def saved_wifi_connections() -> list[str]:
+    """Connection names that are real station profiles (not the setup AP)."""
+    if not has_nmcli():
+        return []
+    r = _nm(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"])
+    names: list[str] = []
+    for line in r.stdout.splitlines():
+        parts = line.split(":")
+        if len(parts) >= 2 and parts[1] == "802-11-wireless" and parts[0] != HOTSPOT_CONN:
+            names.append(parts[0])
+    return names
+
+
+def hotspot_wait_secs(cfg: dict[str, Any], saved_count: int | None = None) -> int:
+    """Shorter wait when there is nothing to connect to (first boot)."""
+    configured = int(cfg.get("wifi_offline_wait_secs", 75))
+    if saved_count is None:
+        saved_count = len(saved_wifi_connections())
+    if saved_count <= 0:
+        return min(12, max(8, configured if configured < 12 else 12))
+    return max(15, configured)
+
+
 def wifi_status() -> dict[str, Any]:
     hotspot = is_hotspot_active()
     ssid = current_ssid()
     online = (not hotspot) and has_internet()
     station = is_station_connected()
+    saved = saved_wifi_connections() if has_nmcli() else []
     return {
         "nmcli": has_nmcli(),
         "device": wifi_device(),
@@ -165,20 +248,17 @@ def wifi_status() -> dict[str, Any]:
         "hotspot_ssid": hotspot_ssid(),
         "hotspot_password": hotspot_password(),
         "hotspot_url": f"http://{HOTSPOT_IP}:8080/wifi",
+        "hotspot_ip": HOTSPOT_IP,
+        "dhcp_ready": _has_hotspot_ip() if hotspot else None,
         "ssid": None if hotspot else ssid,
         "has_route": has_default_route(),
         "online": online,
         "setup_needed": hotspot or not station,
         "captive": hotspot,
+        "saved_connections": saved,
+        "scan": dict(_last_scan_meta),
         "connect": connect_progress(),
     }
-
-
-def _ensure_sudo_nmcli() -> list[str]:
-    """Prefix with sudo when not root."""
-    if os.geteuid() == 0:
-        return []
-    return ["sudo", "-n"]
 
 
 def _scan_cache_path() -> Path:
@@ -201,7 +281,7 @@ def _save_scan_cache(networks: list[dict[str, Any]]) -> None:
             + "\n"
         )
     except OSError as e:
-        log.warning("Could not save Wi‑Fi scan cache: %s", e)
+        log.warning("Could not save Wi-Fi scan cache: %s", e)
 
 
 def _load_scan_cache() -> list[dict[str, Any]]:
@@ -249,7 +329,7 @@ def _parse_nmcli_wifi_stdout(stdout: str) -> list[dict[str, Any]]:
 
 
 def _nmcli_wifi_list(*, rescan: bool) -> list[dict[str, Any]]:
-    cmd = _ensure_sudo_nmcli() + [
+    cmd = [
         "nmcli",
         "-t",
         "-f",
@@ -260,7 +340,7 @@ def _nmcli_wifi_list(*, rescan: bool) -> list[dict[str, Any]]:
     ]
     if rescan:
         cmd += ["--rescan", "yes"]
-    r = _run(cmd, timeout=45)
+    r = _nm(cmd, timeout=45)
     if r.returncode != 0:
         log.warning("nmcli wifi list failed: %s", (r.stderr or r.stdout).strip())
         return []
@@ -270,7 +350,7 @@ def _nmcli_wifi_list(*, rescan: bool) -> list[dict[str, Any]]:
 def _iw_scan() -> list[dict[str, Any]]:
     """Best-effort scan while AP mode is up (Pi firmware sometimes still reports BSS)."""
     dev = wifi_device() or "wlan0"
-    r = _run(_ensure_sudo_nmcli() + ["iw", "dev", dev, "scan"], timeout=25)
+    r = _nm(["iw", "dev", dev, "scan"], timeout=25)
     if r.returncode != 0:
         log.info("iw scan skipped/failed: %s", (r.stderr or r.stdout).strip()[:200])
         return []
@@ -303,99 +383,241 @@ def _iw_scan() -> list[dict[str, Any]]:
 
 
 def scan_networks(rescan: bool = True) -> list[dict[str, Any]]:
-    """List nearby Wi‑Fi networks. Uses a pre-hotspot cache because AP mode often cannot scan."""
+    """List nearby Wi-Fi networks. Uses a pre-hotspot cache because AP mode often cannot scan."""
+    global _last_scan_meta
     if not has_nmcli():
-        return _load_scan_cache()
+        cached = _load_scan_cache()
+        _last_scan_meta = {"source": "cache" if cached else "none", "count": len(cached)}
+        return cached
 
     with _lock:
         live: list[dict[str, Any]] = []
         hotspot = is_hotspot_active()
+        source = "none"
         # Rescan while AP is up usually returns empty and can wipe NM's list.
         live = _nmcli_wifi_list(rescan=rescan and not hotspot)
+        if live:
+            source = "nmcli"
         if not live:
             live = _nmcli_wifi_list(rescan=False)
+            if live:
+                source = "nmcli-cached"
         if not live:
             live = _iw_scan()
+            if live:
+                source = "iw"
         if live:
             _save_scan_cache(live)
+            _last_scan_meta = {"source": source, "count": len(live)}
             return live
         cached = _load_scan_cache()
         if cached:
-            log.info("Using cached Wi‑Fi scan (%s networks) because live scan is empty", len(cached))
+            log.info("Using cached Wi-Fi scan (%s networks) because live scan is empty", len(cached))
+        _last_scan_meta = {"source": "cache" if cached else "none", "count": len(cached)}
         return cached
+
+
+def _connection_exists(name: str) -> bool:
+    r = _nm(["nmcli", "-t", "-f", "NAME", "connection", "show"])
+    for line in r.stdout.splitlines():
+        if line == name:
+            return True
+    return False
+
+
+def _prepare_radio(dev: str) -> None:
+    _nm(["nmcli", "radio", "wifi", "on"])
+    _nm(["rfkill", "unblock", "wifi"])
+    _nm(["nmcli", "device", "set", dev, "managed", "yes"])
+    # powersave 2 = ignore / disable. Helps AP beacons stay visible.
+    _nm(["iw", "dev", dev, "set", "power_save", "off"])
+
+
+def _write_dnsmasq_captive(*, reload_nm: bool = False) -> None:
+    """Point all DNS names at the hotspot IP so captive browsers open our page."""
+    conf_dir = Path("/etc/NetworkManager/dnsmasq-shared.d")
+    conf = conf_dir / "adhan-captive.conf"
+    try:
+        if not conf_dir.is_dir():
+            _nm(["mkdir", "-p", str(conf_dir)])
+        content = f"# Adhan Player captive DNS\naddress=/#/{HOTSPOT_IP}\n"
+        proc = subprocess.run(
+            _ensure_sudo_nmcli() + ["tee", str(conf)],
+            input=content,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            log.warning("Could not write dnsmasq captive config: %s", proc.stderr)
+            return
+        if reload_nm:
+            # Only reload when the AP is down. Reloading NM while the AP is up
+            # drops beacons and is a common cause of a "finicky" hotspot.
+            _nm(["systemctl", "reload", "NetworkManager"])
+    except Exception as e:
+        log.warning("dnsmasq captive setup failed: %s", e)
+
+
+def _clear_dnsmasq_captive() -> None:
+    conf = Path("/etc/NetworkManager/dnsmasq-shared.d/adhan-captive.conf")
+    if conf.exists():
+        _nm(["rm", "-f", str(conf)])
+
+
+def enable_http80_redirect() -> None:
+    """http://adhan.local uses port 80; the app listens on 8080."""
+    spec = [
+        "-t",
+        "nat",
+        "-A",
+        "PREROUTING",
+        "-p",
+        "tcp",
+        "--dport",
+        "80",
+        "-j",
+        "REDIRECT",
+        "--to-port",
+        "8080",
+    ]
+    for proto in ("iptables", "ip6tables"):
+        check = spec.copy()
+        check[check.index("-A")] = "-C"
+        exists = _nm([proto] + check)
+        if exists.returncode != 0:
+            r = _nm([proto] + spec)
+            if r.returncode != 0:
+                log.warning("%s port-80 redirect failed: %s", proto, (r.stderr or "").strip())
+            else:
+                log.info("%s: redirecting TCP/80 to 8080 (adhan.local)", proto)
+
+
+def _enable_captive_redirects() -> None:
+    """Captive DNS plus TCP/80 to 8080 so phones open the setup page."""
+    enable_http80_redirect()
+    _write_dnsmasq_captive(reload_nm=False)
+
+
+def _disable_captive_redirects() -> None:
+    # Keep the port-80 redirect so http://adhan.local still works on the LAN.
+    _clear_dnsmasq_captive()
+
+
+def _wait_hotspot_ready(dev: str, timeout: float = 20.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if is_hotspot_active() and _has_hotspot_ip(dev):
+            return True
+        time.sleep(0.4)
+    return is_hotspot_active()
+
+
+def _modify_hotspot_settings(ssid: str, dev: str) -> subprocess.CompletedProcess:
+    return _nm(
+        [
+            "nmcli",
+            "connection",
+            "modify",
+            HOTSPOT_CONN,
+            "connection.interface-name",
+            dev,
+            "connection.autoconnect",
+            "no",
+            "802-11-wireless.ssid",
+            ssid,
+            "802-11-wireless.mode",
+            "ap",
+            "802-11-wireless.band",
+            "bg",
+            "802-11-wireless.channel",
+            HOTSPOT_CHANNEL,
+            "802-11-wireless.powersave",
+            "2",
+            "802-11-wireless-security.key-mgmt",
+            "none",
+            "ipv4.method",
+            "shared",
+            "ipv4.addresses",
+            HOTSPOT_CIDR,
+            "ipv6.method",
+            "disabled",
+        ]
+    )
 
 
 def start_hotspot() -> dict[str, Any]:
     if not has_nmcli():
         raise RuntimeError("NetworkManager (nmcli) is not installed")
+    wait_for_networkmanager(20)
 
     ssid = hotspot_ssid()
     dev = wifi_device() or "wlan0"
+    _prepare_radio(dev)
 
-    # Scan while the radio is still a client — AP mode on a Pi usually cannot see other SSIDs.
+    # Scan while the radio is still a client. AP mode on a Pi usually cannot see other SSIDs.
     try:
         pre = scan_networks(rescan=True)
         log.info("Cached %s nearby network(s) before starting hotspot", len(pre))
     except Exception as e:
         log.warning("Pre-hotspot scan failed: %s", e)
 
+    # Write captive DNS before bringing the AP up (dnsmasq-shared reads it on start).
+    # Do not reload NetworkManager here.
+    _write_dnsmasq_captive(reload_nm=False)
+
     with _lock:
         log.info("Starting open setup hotspot SSID=%s on %s", ssid, dev)
-        _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", HOTSPOT_CONN])
-        add = _run(
-            _ensure_sudo_nmcli()
-            + [
-                "nmcli",
-                "connection",
-                "add",
-                "type",
-                "wifi",
-                "ifname",
-                dev,
-                "con-name",
-                HOTSPOT_CONN,
-                "autoconnect",
-                "no",
-                "ssid",
-                ssid,
-            ]
-        )
-        if add.returncode != 0:
-            raise RuntimeError(add.stderr.strip() or "Failed to create hotspot connection")
+        if not _connection_exists(HOTSPOT_CONN):
+            add = _nm(
+                [
+                    "nmcli",
+                    "connection",
+                    "add",
+                    "type",
+                    "wifi",
+                    "ifname",
+                    dev,
+                    "con-name",
+                    HOTSPOT_CONN,
+                    "autoconnect",
+                    "no",
+                    "ssid",
+                    ssid,
+                ]
+            )
+            if add.returncode != 0:
+                raise RuntimeError(add.stderr.strip() or "Failed to create hotspot connection")
 
-        mod = _run(
-            _ensure_sudo_nmcli()
-            + [
-                "nmcli",
-                "connection",
-                "modify",
-                HOTSPOT_CONN,
-                "802-11-wireless.mode",
-                "ap",
-                "802-11-wireless.band",
-                "bg",
-                "ipv4.method",
-                "shared",
-            ]
-        )
+        mod = _modify_hotspot_settings(ssid, dev)
         if mod.returncode != 0:
-            raise RuntimeError(mod.stderr.strip() or "Failed to configure hotspot")
+            # Older nmcli may reject powersave / channel. Retry a smaller set.
+            log.warning("Full hotspot modify failed (%s); retrying essentials", (mod.stderr or "").strip())
+            _nm(
+                [
+                    "nmcli",
+                    "connection",
+                    "modify",
+                    HOTSPOT_CONN,
+                    "802-11-wireless.mode",
+                    "ap",
+                    "802-11-wireless.band",
+                    "bg",
+                    "ipv4.method",
+                    "shared",
+                    "ipv4.addresses",
+                    HOTSPOT_CIDR,
+                    "ipv6.method",
+                    "disabled",
+                    "wifi-sec.key-mgmt",
+                    "none",
+                ]
+            )
 
-        # Open network — no WPA. Ignore failure if security keys were never set.
-        _run(
-            _ensure_sudo_nmcli()
-            + [
-                "nmcli",
-                "connection",
-                "modify",
-                HOTSPOT_CONN,
-                "remove",
-                "wifi-sec",
-            ]
-        )
-        _run(
-            _ensure_sudo_nmcli()
-            + [
+        # Open network: drop leftover WPA keys if a previous version set them.
+        _nm(["nmcli", "connection", "modify", HOTSPOT_CONN, "remove", "wifi-sec"])
+        _nm(
+            [
                 "nmcli",
                 "connection",
                 "modify",
@@ -405,33 +627,171 @@ def start_hotspot() -> dict[str, Any]:
             ]
         )
 
-        up = _run(
-            _ensure_sudo_nmcli() + ["nmcli", "connection", "up", HOTSPOT_CONN],
-            timeout=60,
-        )
-        if up.returncode != 0:
-            raise RuntimeError(up.stderr.strip() or "Failed to start hotspot")
+        # Leave any station association so the radio can become an AP.
+        _nm(["nmcli", "device", "disconnect", dev], timeout=20)
+        time.sleep(1)
 
-        _enable_captive_redirects()
-        _write_dnsmasq_captive()
+        last_err = ""
+        up = None
+        for attempt in range(1, 4):
+            up = _nm(["nmcli", "connection", "up", HOTSPOT_CONN], timeout=60)
+            if up.returncode == 0:
+                break
+            last_err = (up.stderr or up.stdout or "Failed to start hotspot").strip()
+            log.warning("Hotspot up attempt %s failed: %s", attempt, last_err)
+            time.sleep(2 * attempt)
+        if not up or up.returncode != 0:
+            hint = ""
+            err_l = last_err.lower()
+            if "dnsmasq" in err_l or "dhcp" in err_l or "shared" in err_l:
+                hint = (
+                    " Install dnsmasq-base (not the dnsmasq service) so NetworkManager "
+                    "can hand out 10.42.0.1/24 addresses."
+                )
+            raise RuntimeError((last_err or "Failed to start hotspot") + hint)
+
+        enable_http80_redirect()
+        ready = _wait_hotspot_ready(dev, timeout=18)
+        if not ready:
+            log.warning(
+                "Hotspot connection is up but %s is not on %s yet (DHCP/shared may be missing)",
+                HOTSPOT_IP,
+                dev,
+            )
+        _invalidate_hotspot_cache()
         set_led_mode("hotspot")
-        log.info("Hotspot up — join open SSID %s then open http://%s:8080/wifi", ssid, HOTSPOT_IP)
+        log.info("Hotspot up; join open SSID %s then open http://%s:8080/wifi", ssid, HOTSPOT_IP)
         return wifi_status()
 
 
 def stop_hotspot() -> dict[str, Any]:
     with _lock:
         if has_nmcli():
-            _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "down", HOTSPOT_CONN])
-            _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", HOTSPOT_CONN])
+            _nm(["nmcli", "connection", "down", HOTSPOT_CONN], timeout=20)
+            # Keep the profile so the next start is faster and less flaky.
         _disable_captive_redirects()
+        _invalidate_hotspot_cache()
         set_led_mode("idle")
         log.info("Setup hotspot stopped")
         return wifi_status()
 
 
+def _wait_device_ready_for_station(dev: str, timeout: float = 15.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r = _nm(["nmcli", "-t", "-f", "DEVICE,STATE", "device", "status"])
+        for line in r.stdout.splitlines():
+            parts = line.split(":")
+            if parts and parts[0] == dev:
+                state = parts[1] if len(parts) > 1 else ""
+                if "unavailable" in state:
+                    _prepare_radio(dev)
+                    break
+                if state in {"disconnected", "connected", "connecting", "disconnected (externally)"}:
+                    return
+        time.sleep(0.5)
+
+
+def _station_con_name(ssid: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", ssid).strip("-") or "home"
+    return f"adhan-home-{safe}"[:43]
+
+
+def _connect_station(dev: str, ssid: str, password: str | None, hidden: bool) -> subprocess.CompletedProcess:
+    con = _station_con_name(ssid)
+    if _connection_exists(con):
+        _nm(["nmcli", "connection", "delete", con])
+
+    add_cmd = [
+        "nmcli",
+        "connection",
+        "add",
+        "type",
+        "wifi",
+        "ifname",
+        dev,
+        "con-name",
+        con,
+        "ssid",
+        ssid,
+        "connection.autoconnect",
+        "yes",
+        "connection.autoconnect-priority",
+        "100",
+        "802-11-wireless.powersave",
+        "2",
+    ]
+    if hidden:
+        add_cmd += ["802-11-wireless.hidden", "yes"]
+    add = _nm(add_cmd)
+    if add.returncode != 0:
+        return add
+
+    if password:
+        sec = _nm(
+            [
+                "nmcli",
+                "connection",
+                "modify",
+                con,
+                "wifi-sec.key-mgmt",
+                "wpa-psk",
+                "wifi-sec.psk",
+                password,
+            ]
+        )
+        if sec.returncode != 0:
+            return sec
+    else:
+        _nm(["nmcli", "connection", "modify", con, "remove", "wifi-sec"])
+        _nm(["nmcli", "connection", "modify", con, "wifi-sec.key-mgmt", "none"])
+
+    up = _nm(["nmcli", "connection", "up", con], timeout=45)
+    if up.returncode == 0:
+        return up
+
+    # Some home routers are WPA3-only; retry with SAE if PSK failed.
+    if password and up.returncode != 0:
+        sae = _nm(
+            [
+                "nmcli",
+                "connection",
+                "modify",
+                con,
+                "wifi-sec.key-mgmt",
+                "sae",
+                "wifi-sec.psk",
+                password,
+            ]
+        )
+        if sae.returncode == 0:
+            up = _nm(["nmcli", "connection", "up", con], timeout=45)
+            if up.returncode == 0:
+                return up
+
+    # Fallback: classic "device wifi connect" after a rescan.
+    _nm(["nmcli", "device", "wifi", "rescan"])
+    time.sleep(2)
+    cmd = ["nmcli", "device", "wifi", "connect", ssid, "ifname", dev]
+    if password:
+        cmd += ["password", password]
+    if hidden:
+        cmd += ["hidden", "yes"]
+    return _nm(cmd, timeout=90)
+
+
+def _restore_hotspot_after_failure() -> None:
+    for attempt in range(1, 4):
+        try:
+            start_hotspot()
+            return
+        except Exception as e:
+            log.error("Failed to restore hotspot (attempt %s): %s", attempt, e)
+            time.sleep(2 * attempt)
+
+
 def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -> dict[str, Any]:
-    """Leave hotspot (if any) and join a home Wi‑Fi network (blocking)."""
+    """Leave hotspot (if any) and join a home Wi-Fi network (blocking)."""
     if not has_nmcli():
         raise RuntimeError("NetworkManager (nmcli) is not installed")
     ssid = (ssid or "").strip()
@@ -441,55 +801,58 @@ def connect_wifi(ssid: str, password: str | None = None, hidden: bool = False) -
         raise ValueError("SSID too long")
 
     with _lock:
-        if _connect_state.get("busy"):
-            raise RuntimeError("A Wi‑Fi connect is already in progress")
+        if _connect_state.get("busy") and _connect_state.get("phase") != "connecting":
+            raise RuntimeError("A Wi-Fi connect is already in progress")
         _connect_state.update(
             {"busy": True, "phase": "connecting", "ssid": ssid, "error": None, "wifi": None}
         )
 
+    dev = wifi_device() or "wlan0"
     try:
-        log.info("Connecting to Wi‑Fi SSID=%s", ssid)
-        # Tear down hotspot first so the radio can associate as station
+        log.info("Connecting to Wi-Fi SSID=%s", ssid)
+        wait_for_networkmanager(15)
         if is_hotspot_active():
-            _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "down", HOTSPOT_CONN])
-            _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", HOTSPOT_CONN])
-            _disable_captive_redirects()
-            time.sleep(2)
-
-        # Delete any previous connection with this name to avoid stale PSK
-        _run(_ensure_sudo_nmcli() + ["nmcli", "connection", "delete", ssid])
-
-        cmd = _ensure_sudo_nmcli() + [
-            "nmcli",
-            "device",
-            "wifi",
-            "connect",
-            ssid,
-        ]
-        if password:
-            cmd += ["password", password]
-        if hidden:
-            cmd += ["hidden", "yes"]
-        r = _run(cmd, timeout=90)
-        if r.returncode != 0:
-            log.error("Wi‑Fi connect failed: %s", r.stderr.strip())
+            # Cache one last scan while AP is still up (usually empty; cache from start remains).
             try:
-                start_hotspot()
-            except Exception as e:
-                log.error("Failed to restore hotspot after connect error: %s", e)
-            err = (r.stderr or r.stdout or "Failed to connect").strip()
+                scan_networks(rescan=False)
+            except Exception:
+                pass
+            _nm(["nmcli", "connection", "down", HOTSPOT_CONN], timeout=20)
+            _disable_captive_redirects()
+            _invalidate_hotspot_cache()
+            time.sleep(2)
+            _wait_device_ready_for_station(dev)
+
+        _prepare_radio(dev)
+
+        last = None
+        for attempt in range(1, 4):
+            if attempt > 1:
+                _nm(["nmcli", "device", "wifi", "rescan"])
+                time.sleep(1.5 * attempt)
+            last = _connect_station(dev, ssid, password, hidden)
+            if last.returncode == 0:
+                break
+            log.warning(
+                "Wi-Fi connect attempt %s failed: %s",
+                attempt,
+                (last.stderr or last.stdout or "").strip(),
+            )
+
+        if not last or last.returncode != 0:
+            err = (last.stderr or last.stdout or "Failed to connect").strip() if last else "Failed to connect"
+            log.error("Wi-Fi connect failed: %s", err)
+            _restore_hotspot_after_failure()
             with _lock:
                 _connect_state.update(
                     {"busy": False, "phase": "failed", "error": err, "wifi": wifi_status()}
                 )
             raise RuntimeError(err)
 
-        _run(
-            _ensure_sudo_nmcli()
-            + ["nmcli", "connection", "modify", ssid, "connection.autoconnect", "yes"]
-        )
+        con = _station_con_name(ssid)
+        _nm(["nmcli", "connection", "modify", con, "connection.autoconnect", "yes"])
 
-        for _ in range(20):
+        for _ in range(30):
             if has_default_route():
                 break
             time.sleep(0.5)
@@ -516,19 +879,17 @@ def connect_wifi_async(ssid: str, password: str | None = None, hidden: bool = Fa
         raise ValueError("SSID is required")
     with _lock:
         if _connect_state.get("busy"):
-            raise RuntimeError("A Wi‑Fi connect is already in progress")
+            raise RuntimeError("A Wi-Fi connect is already in progress")
         _connect_state.update(
             {"busy": True, "phase": "connecting", "ssid": ssid, "error": None, "wifi": None}
         )
 
     def _job():
         try:
-            # Reset busy so connect_wifi can take ownership of the state machine
-            with _lock:
-                _connect_state["busy"] = False
+            # connect_wifi is already marked busy/connecting above.
             connect_wifi(ssid, password, hidden=hidden)
         except Exception as e:
-            log.error("Async Wi‑Fi connect error: %s", e)
+            log.error("Async Wi-Fi connect error: %s", e)
             with _lock:
                 _connect_state.update(
                     {
@@ -540,75 +901,6 @@ def connect_wifi_async(ssid: str, password: str | None = None, hidden: bool = Fa
 
     threading.Thread(target=_job, name="adhan-wifi-connect", daemon=True).start()
     return wifi_status()
-
-
-def _write_dnsmasq_captive() -> None:
-    """Point all DNS names at the hotspot IP so captive browsers open our page."""
-    conf_dir = Path("/etc/NetworkManager/dnsmasq-shared.d")
-    conf = conf_dir / "adhan-captive.conf"
-    try:
-        if not conf_dir.is_dir():
-            _run(_ensure_sudo_nmcli() + ["mkdir", "-p", str(conf_dir)])
-        content = f"# Adhan Player captive DNS\naddress=/#/{HOTSPOT_IP}\n"
-        # Write via tee for permissions
-        proc = subprocess.run(
-            _ensure_sudo_nmcli() + ["tee", str(conf)],
-            input=content,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            log.warning("Could not write dnsmasq captive config: %s", proc.stderr)
-            return
-        _run(_ensure_sudo_nmcli() + ["systemctl", "reload", "NetworkManager"])
-    except Exception as e:
-        log.warning("dnsmasq captive setup failed: %s", e)
-
-
-def _clear_dnsmasq_captive() -> None:
-    conf = Path("/etc/NetworkManager/dnsmasq-shared.d/adhan-captive.conf")
-    if conf.exists():
-        _run(_ensure_sudo_nmcli() + ["rm", "-f", str(conf)])
-
-
-def enable_http80_redirect() -> None:
-    """http://adhan.local uses port 80; the app listens on 8080."""
-    spec = [
-        "-t",
-        "nat",
-        "-A",
-        "PREROUTING",
-        "-p",
-        "tcp",
-        "--dport",
-        "80",
-        "-j",
-        "REDIRECT",
-        "--to-port",
-        "8080",
-    ]
-    for proto in ("iptables", "ip6tables"):
-        check = spec.copy()
-        check[check.index("-A")] = "-C"
-        exists = _run(_ensure_sudo_nmcli() + [proto] + check)
-        if exists.returncode != 0:
-            r = _run(_ensure_sudo_nmcli() + [proto] + spec)
-            if r.returncode != 0:
-                log.warning("%s port-80 redirect failed: %s", proto, (r.stderr or "").strip())
-            else:
-                log.info("%s: redirecting TCP/80 → 8080 (adhan.local)", proto)
-
-
-def _enable_captive_redirects() -> None:
-    """Captive DNS plus TCP/80 → 8080 so phones open the setup page."""
-    enable_http80_redirect()
-    _write_dnsmasq_captive()
-
-
-def _disable_captive_redirects() -> None:
-    # Keep the port-80 redirect so http://adhan.local still works on the LAN.
-    _clear_dnsmasq_captive()
 
 
 # ---------------------------------------------------------------------------
@@ -653,7 +945,6 @@ def _led_loop() -> None:
     while not _led_stop.is_set():
         mode = _led_mode
         if mode == "hotspot":
-            # Slow blink: waiting for phone setup
             _led_write(True)
             if _led_stop.wait(0.7):
                 break
@@ -691,7 +982,7 @@ def stop_led_indicator() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Boot watchdog — auto hotspot when offline
+# Boot watchdog: auto hotspot when offline
 # ---------------------------------------------------------------------------
 
 def ensure_connectivity_or_hotspot(wait_secs: int | None = None) -> dict[str, Any]:
@@ -702,21 +993,27 @@ def ensure_connectivity_or_hotspot(wait_secs: int | None = None) -> dict[str, An
     if not cfg.get("wifi_hotspot_auto", True):
         return wifi_status()
     if not has_nmcli():
-        log.warning("nmcli missing — cannot auto-start hotspot")
+        log.warning("nmcli missing; cannot auto-start hotspot")
         return wifi_status()
 
-    wait = wait_secs if wait_secs is not None else int(cfg.get("wifi_offline_wait_secs", 75))
-    log.info("Wi‑Fi watchdog: waiting up to %ss for station connection", wait)
+    wait_for_networkmanager(25)
+    saved = saved_wifi_connections()
+    wait = wait_secs if wait_secs is not None else hotspot_wait_secs(cfg, len(saved))
+    log.info(
+        "Wi-Fi watchdog: waiting up to %ss for station connection (saved profiles=%s)",
+        wait,
+        len(saved),
+    )
     deadline = time.time() + max(5, wait)
     while time.time() < deadline and not _watchdog_stop.is_set():
         if is_station_connected():
             set_led_mode("online" if has_internet() else "idle")
-            log.info("Wi‑Fi station connected (%s)", current_ssid())
+            log.info("Wi-Fi station connected (%s)", current_ssid())
             return wifi_status()
         if is_hotspot_active():
             set_led_mode("hotspot")
             return wifi_status()
-        time.sleep(3)
+        time.sleep(2)
 
     if is_station_connected():
         set_led_mode("online" if has_internet() else "idle")
@@ -744,10 +1041,9 @@ def start_wifi_watchdog() -> None:
         try:
             ensure_connectivity_or_hotspot()
         except Exception as e:
-            log.error("Wi‑Fi watchdog error: %s", e)
-        # Periodically re-check: if we lose station Wi‑Fi later, bring hotspot back
+            log.error("Wi-Fi watchdog error: %s", e)
         while not _watchdog_stop.is_set():
-            _watchdog_stop.wait(60)
+            _watchdog_stop.wait(45)
             if _watchdog_stop.is_set():
                 break
             from app.config import load_config
@@ -758,7 +1054,7 @@ def start_wifi_watchdog() -> None:
                 if is_station_connected():
                     set_led_mode("online" if has_internet() else "idle")
                 continue
-            log.warning("Lost Wi‑Fi — starting setup hotspot")
+            log.warning("Lost Wi-Fi; starting setup hotspot")
             try:
                 start_hotspot()
             except Exception as e:

@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.audio_slots import profile_for
 from app.config import BASE_DIR, PRAYER_NAMES, load_config
 from app.dua import resolve_dua_path
 from app.state import consume_skip, is_muted, update_state
@@ -153,9 +154,7 @@ def parse_time(time_str: str, target_date: date | None = None) -> datetime:
 
 
 def _volume_for(prayer_name: str, config: dict[str, Any]) -> int:
-    if prayer_name == "Fajr":
-        return int(config.get("fajr_volume", config.get("volume", 80)))
-    return int(config.get("volume", 80))
+    return int(profile_for(prayer_name, config)["adhan_volume"])
 
 
 def _build_play_cmd(audio_path: Path, volume: int, audio_output: str) -> list[str]:
@@ -232,7 +231,7 @@ def play_file(
 
 
 def play_boot_sound(config: dict[str, Any] | None = None) -> None:
-    """Short confirmation that the speaker came up — never the full adhan."""
+    """Short confirmation that the speaker came up, never the full adhan."""
     cfg = config or load_config()
     kind = (cfg.get("boot_sound") or "chime").lower()
     if kind in {"off", "none", "silent", "false"}:
@@ -244,7 +243,7 @@ def play_boot_sound(config: dict[str, Any] | None = None) -> None:
     audio_file = cfg.get("boot_audio_file") or "audio/boot-chime.mp3"
     path = BASE_DIR / audio_file if not str(audio_file).startswith("/") else Path(audio_file)
     if not path.exists():
-        log.warning("Boot sound missing (%s) — skipping", path)
+        log.warning("Boot sound missing (%s); skipping", path)
         return
     vol = int(cfg.get("boot_volume", 45))
     play_file(path, label="Boot chime", volume=vol, config=cfg, timeout=30)
@@ -252,34 +251,30 @@ def play_boot_sound(config: dict[str, Any] | None = None) -> None:
 
 def play_adhan(prayer_name: str, config: dict[str, Any] | None = None) -> None:
     cfg = config or load_config()
+    slot = profile_for(prayer_name, cfg)
     is_kahf = prayer_name == "Kahf"
     if is_kahf:
-        audio_file = cfg.get("kahf_audio_file", "audio/kahf.mp3")
         timeout = (cfg.get("kahf_length_minutes", 30) + 10) * 60
         label = "Surah Kahf"
-    elif prayer_name == "Fajr" and cfg.get("fajr_audio_file"):
-        audio_file = cfg["fajr_audio_file"]
-        timeout = 600
-        label = f"Adhan for {prayer_name}"
     else:
-        audio_file = cfg.get("audio_file", "audio/adhan.mp3")
         timeout = 600
         label = f"Adhan for {prayer_name}"
 
-    volume = _volume_for(prayer_name, cfg)
-    play_file(audio_file, label=label, volume=volume, config=cfg, timeout=timeout)
+    play_file(slot["adhan_file"], label=label, volume=slot["adhan_volume"], config=cfg, timeout=timeout)
 
     # Post-adhan dua (never after Kahf or boot chime)
-    if not is_kahf and cfg.get("dua_enabled", True) and prayer_name in PRAYER_NAMES + ["Test"]:
+    allow_dua = prayer_name in PRAYER_NAMES + ["Test"]
+    if not is_kahf and slot["dua_enabled"] and allow_dua:
         delay = float(cfg.get("dua_delay_seconds", 2))
         if delay > 0 and not _shutdown.is_set():
             time.sleep(delay)
-        dua_path = resolve_dua_path(cfg)
+        dua_path = resolve_dua_path(cfg, slot.get("dua_id"))
         if dua_path:
+            dua_label = "Fajr dua after adhan" if prayer_name == "Fajr" else "Dua after adhan"
             play_file(
                 dua_path,
-                label="Dua after adhan",
-                volume=volume,
+                label=dua_label,
+                volume=slot["dua_volume"],
                 config=cfg,
                 timeout=180,
             )
@@ -429,10 +424,10 @@ def scheduler_loop() -> None:
             break
 
         if is_muted():
-            log.info("Muted — skipping %s", prayer_name)
+            log.info("Muted; skipping %s", prayer_name)
             continue
         if consume_skip(prayer_name):
-            log.info("Skip requested — skipping %s", prayer_name)
+            log.info("Skip requested; skipping %s", prayer_name)
             continue
 
         play_adhan(prayer_name, config)
@@ -453,7 +448,7 @@ def install_signal_handlers() -> None:
     def _handler(signum, frame):  # noqa: ARG001
         log.info("Shutdown signal received")
         request_shutdown()
-        # Don't swallow SIGTERM — uvicorn must exit or systemctl restart hangs.
+        # Don't swallow SIGTERM: uvicorn must exit or systemctl restart hangs.
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, _handler)
