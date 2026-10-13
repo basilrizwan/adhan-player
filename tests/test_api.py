@@ -88,3 +88,82 @@ def test_health(tmp_config):
     res = client.get("/api/health")
     assert res.status_code == 200
     assert res.json()["ok"] is True
+
+
+def test_patch_rejects_bad_timezone(tmp_config):
+    client = TestClient(app)
+    res = client.patch("/api/config", json={"timezone": "Not/AZone"})
+    assert res.status_code == 422
+
+
+def test_patch_rejects_unknown_method(tmp_config):
+    client = TestClient(app)
+    res = client.patch("/api/config", json={"method": 99})
+    assert res.status_code == 422
+
+
+def test_patch_rejects_out_of_range_coords(tmp_config):
+    client = TestClient(app)
+    res = client.patch("/api/config", json={"latitude": 200})
+    assert res.status_code == 422
+
+
+def test_patch_boot_sound_maps_file(tmp_config):
+    client = TestClient(app)
+    res = client.patch("/api/config", json={"boot_sound": "bell"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["boot_sound"] == "bell"
+    assert body["boot_audio_file"].endswith("boot-bell.mp3")
+    assert body["play_on_boot"] is True
+    off = client.patch("/api/config", json={"boot_sound": "off"})
+    assert off.json()["play_on_boot"] is False
+
+
+def test_patch_reschedules(tmp_config, monkeypatch):
+    called = {"n": 0}
+
+    def fake_refresh(cfg=None):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr("app.api.refresh_schedule", fake_refresh)
+    client = TestClient(app)
+    res = client.patch("/api/config", json={"location_name": "Austin", "method": 2})
+    assert res.status_code == 200
+    assert called["n"] == 1
+
+
+def test_mute_until_has_timezone(tmp_config):
+    client = TestClient(app)
+    res = client.post("/api/mute", json={"minutes": 15})
+    assert res.status_code == 200
+    until = res.json()["state"]["mute_until"]
+    assert until
+    assert until.endswith("Z") or "+" in until or until.count("-") >= 3
+    assert res.json()["state"]["muted"] is True
+
+
+def test_boot_picker_is_in_portal():
+    from pathlib import Path
+
+    html = Path("web/index.html").read_text()
+    js = Path("web/assets/app.js").read_text()
+    assert 'id="bootSound"' in html
+    assert "audio/boot-${sound}.mp3" in js
+    assert 'id="kahfMissing"' in html
+    assert 'id="hotspotAuto"' in html
+    assert "isSecureContext" in js
+
+
+def test_concurrent_config_saves(tmp_config):
+    from concurrent.futures import ThreadPoolExecutor
+
+    client = TestClient(app)
+
+    def save(i: int):
+        return client.patch("/api/config", json={"volume": 50 + (i % 40)})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(save, range(24)))
+    assert all(r.status_code == 200 for r in results)

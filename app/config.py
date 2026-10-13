@@ -16,6 +16,12 @@ WEB_DIR = BASE_DIR / "web"
 
 PRAYER_NAMES = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]
 
+BOOT_SOUNDS = {
+    "chime": "audio/boot-chime.mp3",
+    "bell": "audio/boot-bell.mp3",
+    "takbir": "audio/boot-takbir.mp3",
+}
+
 CALC_METHODS = {
     0: "Jafari",
     1: "Karachi",

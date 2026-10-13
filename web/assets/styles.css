@@ -228,6 +228,11 @@ input[type="range"] { width: 100%; }
 }
 
 .hidden { display: none !important; }
+.warn-text { color: var(--danger); }
+.field-label { display: block; margin: 0.85rem 0 0.35rem; font-weight: 600; }
+.search-row { display: flex; gap: 0.5rem; align-items: center; }
+.search-row select { flex: 1; }
+.search-row button { width: auto; margin: 0; }
 
 .card-plain {
   padding: 0.9rem 0;
