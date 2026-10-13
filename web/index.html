@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Adhan Player</title>
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/assets/styles.css?v=1.2.10" />
+  <link rel="stylesheet" href="/assets/styles.css?v=1.3.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
@@ -40,8 +40,8 @@
 
         <div class="hero-status">
           <p class="eyebrow" id="nextLabel">Next prayer</p>
-          <h1 id="nextPrayer">—</h1>
-          <p class="big-time" id="nextTime">—</p>
+          <h1 id="nextPrayer">-</h1>
+          <p class="big-time" id="nextTime">-</p>
           <p class="muted" id="locationLine"></p>
         </div>
 
@@ -94,7 +94,7 @@
         <h1 id="setupTitle">Setup</h1>
 
         <div class="setup-step" data-step="1">
-          <p class="lede">Let’s set up your speaker. About a minute — no account needed.</p>
+          <p class="lede">Let’s set up your speaker. About a minute, no account needed.</p>
           <div class="banner access-card">
             <p class="access-title">How you’ll open this later</p>
             <p>On any phone or laptop on your home Wi‑Fi, go to <strong>http://adhan.local</strong></p>
@@ -108,10 +108,14 @@
         <div class="setup-step" data-step="2">
           <p class="lede">Where should prayer times be calculated?</p>
           <button type="button" id="btnGeo">Use this phone’s location</button>
-          <p class="hint">We’ll fill latitude, longitude, and timezone. A nearby city is enough.</p>
-          <label>City or place name
-            <input id="locationName" type="text" placeholder="San Ramon, CA" />
-          </label>
+          <p class="hint">Type a city and pick a suggestion, or use this phone’s GPS. Either fills latitude, longitude, and timezone.</p>
+          <div class="suggest-wrap">
+            <label>City or place name
+              <input id="locationName" type="text" placeholder="San Ramon, CA" autocomplete="off" autocapitalize="words" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="locationSuggest" />
+            </label>
+            <ul id="locationSuggest" class="suggest-list hidden" role="listbox"></ul>
+            <p class="hint" id="locationSearchHint"></p>
+          </div>
           <div class="grid2">
             <label>Latitude <input id="latitude" type="number" step="any" /></label>
             <label>Longitude <input id="longitude" type="number" step="any" /></label>
@@ -171,24 +175,83 @@
 
       <section id="view-audio" class="view">
         <h1>Audio</h1>
-        <p class="lede">Preview adhan and post-adhan dua options. Pick one dua to play after each adhan.</p>
+        <p class="lede">Choose a recording and volume per type. Existing devices keep working: new slots start from your previous single adhan and dua settings.</p>
 
-        <div class="row actions">
-          <button type="button" id="btnPlayAdhan">Preview adhan</button>
-          <button type="button" id="btnPlayFajr" class="ghost">Preview Fajr</button>
+        <div class="audio-slot" data-slot="regular_adhan">
+          <h2>Regular adhan</h2>
+          <p class="hint">Dhuhr, Asr, Maghrib, and Isha (unless a per-prayer override is set).</p>
+          <label>Recording
+            <select id="regularAdhanFile"></select>
+          </label>
+          <label>Volume <span id="regularAdhanVolVal">80</span>%
+            <input id="regularAdhanVolume" type="range" min="0" max="100" />
+          </label>
+          <div class="row actions">
+            <button type="button" id="btnPlayAdhan">Preview regular adhan</button>
+          </div>
         </div>
 
-        <label class="toggle">
-          <input type="checkbox" id="duaEnabled" />
-          Play dua after adhan
-        </label>
+        <div class="audio-slot" data-slot="fajr_adhan">
+          <h2>Fajr adhan</h2>
+          <label>Recording
+            <select id="fajrAdhanFile"></select>
+          </label>
+          <label>Volume <span id="fajrAdhanVolVal">50</span>%
+            <input id="fajrAdhanVolume" type="range" min="0" max="100" />
+          </label>
+          <div class="row actions">
+            <button type="button" id="btnPlayFajr" class="ghost">Preview Fajr adhan</button>
+          </div>
+        </div>
 
+        <div class="audio-slot" data-slot="regular_dua">
+          <h2>Regular dua (after adhan)</h2>
+          <label class="toggle">
+            <input type="checkbox" id="duaEnabled" />
+            Play dua after Dhuhr, Asr, Maghrib, and Isha
+          </label>
+          <label>Volume <span id="regularDuaVolVal">80</span>%
+            <input id="regularDuaVolume" type="range" min="0" max="100" />
+          </label>
+          <div class="row actions">
+            <button type="button" id="btnPlayDua" class="ghost">Preview regular dua</button>
+          </div>
+        </div>
+
+        <div class="audio-slot" data-slot="fajr_dua">
+          <h2>Fajr dua (after Fajr adhan)</h2>
+          <label class="toggle">
+            <input type="checkbox" id="fajrDuaEnabled" />
+            Play dua after Fajr
+          </label>
+          <label>Fajr dua
+            <select id="fajrDuaId"></select>
+          </label>
+          <label>Volume <span id="fajrDuaVolVal">50</span>%
+            <input id="fajrDuaVolume" type="range" min="0" max="100" />
+          </label>
+          <div class="row actions">
+            <button type="button" id="btnPlayFajrDua" class="ghost">Preview Fajr dua</button>
+          </div>
+        </div>
+
+        <p class="hint">Tap “Use this dua” on a card below to set the regular post-adhan dua. Use the Fajr dropdown for a different Fajr dua.</p>
         <div id="duaList" class="dua-list"></div>
+
+        <details class="overrides">
+          <summary>Per-prayer overrides (optional)</summary>
+          <p class="hint">Leave a field on “Default” to use the Fajr or regular slots above.</p>
+          <div id="prayerOverrides"></div>
+        </details>
+
+        <div class="row actions">
+          <button type="button" id="btnSaveAudio">Save audio settings</button>
+        </div>
       </section>
 
       <section id="view-wifi" class="view">
         <h1>Wi‑Fi</h1>
-        <p class="lede">If the Pi can’t join your home network, it starts a setup hotspot so you can configure Wi‑Fi from your phone — no display or SSH needed.</p>
+        <p class="lede">If the Pi can’t join your home network, it starts a setup hotspot so you can configure Wi-Fi from your phone (no display or SSH needed).</p>
         <div class="card-plain" id="wifiInfo"></div>
         <div class="row actions">
           <a class="button-link" id="wifiSetupLink" href="/wifi">Open Wi‑Fi setup page</a>
@@ -210,7 +273,7 @@
         </label>
         <div id="sleepCallout" class="banner warn">
           Leave this <strong>off</strong> unless you need battery/power saving.
-          When sleep is on, the Pi suspends between prayers — Wi‑Fi, <code>adhan.local</code>, and this web portal are unreachable until ~3 minutes before the next adhan.
+          When sleep is on, the Pi suspends between prayers. Wi-Fi, <code>adhan.local</code>, and this web portal are unreachable until about 3 minutes before the next adhan.
           Default is always-on so the portal stays available anytime on your LAN.
         </div>
         <label class="toggle">
@@ -238,6 +301,6 @@
     </main>
   </div>
   <script src="/assets/qrcode.min.js"></script>
-  <script src="/assets/app.js?v=1.2.10"></script>
+  <script src="/assets/app.js?v=1.3.0"></script>
 </body>
 </html>

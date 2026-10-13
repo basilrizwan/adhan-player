@@ -1,5 +1,5 @@
 #!/bin/bash
-# Adhan Player — One-time setup for Raspberry Pi
+# Adhan Player: one-time setup for Raspberry Pi
 # Run after first boot: ./setup.sh
 
 set -e
@@ -15,12 +15,19 @@ echo "User: $ACTUAL_USER"
 echo ""
 echo "[1/7] Installing system packages..."
 sudo apt update
-sudo apt install -y mpv python3-venv curl git avahi-daemon avahi-utils network-manager iptables
+sudo apt install -y mpv python3-venv curl git avahi-daemon avahi-utils network-manager iptables dnsmasq-base rfkill iw
 
-# Prefer NetworkManager for Wi‑Fi / hotspot onboarding
+# Prefer NetworkManager for Wi-Fi / hotspot onboarding.
+# dhcpcd + NM both managing wlan0 makes the setup AP unreliable.
+if systemctl list-unit-files | grep -q '^dhcpcd'; then
+    sudo systemctl disable --now dhcpcd 2>/dev/null || true
+fi
 if systemctl list-unit-files | grep -q NetworkManager.service; then
     sudo systemctl enable NetworkManager
     sudo systemctl start NetworkManager || true
+    sudo nmcli radio wifi on 2>/dev/null || true
+    sudo nmcli device set wlan0 managed yes 2>/dev/null || true
+    sudo iw dev wlan0 set power_save off 2>/dev/null || true
 fi
 
 # 2. Create Python virtual environment
@@ -62,7 +69,7 @@ if [ -n "$BOOT_CFG" ]; then
         echo "gpu_mem=16" | sudo tee -a "$BOOT_CFG" > /dev/null
 fi
 
-# Do NOT disable avahi-daemon — needed for adhan.local discovery
+# Do NOT disable avahi-daemon: needed for adhan.local discovery
 for svc in triggerhappy bluetooth hciuart; do
     if systemctl is-enabled "$svc" &>/dev/null 2>&1; then
         sudo systemctl disable "$svc" 2>/dev/null || true
@@ -98,6 +105,7 @@ $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/tvservice
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/iw
+$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/rfkill
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/iptables
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 $ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload NetworkManager
@@ -147,7 +155,7 @@ echo ""
 echo "If the Pi has home Wi‑Fi (Imager or already joined):"
 echo "  Open http://adhan.local:8080"
 echo ""
-echo "If NOT on Wi‑Fi, the app auto-starts a setup hotspot (~75s):"
+echo "If NOT on Wi-Fi, the app auto-starts a setup hotspot (about 12s if no saved network, else ~75s):"
 echo "  1. On your phone, join Wi‑Fi:  Adhan-${SSID_SUFFIX}  (open, no password)"
 echo "  2. Open:                      http://10.42.0.1:8080/wifi"
 echo "     (or wait for the captive “Sign in to network” prompt)"

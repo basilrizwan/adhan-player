@@ -10,14 +10,14 @@ Bundled media is for personal / da‘wah use with the Adhan Player. Replace any 
 
 ## Surah Kahf
 
-- `audio/kahf.mp3` — user-provided / local copy used by the Thursday Maghrib feature.
+- `audio/kahf.mp3`: user-provided / local copy used by the Thursday Maghrib feature.
 
 ## Post-adhan dua (`audio/dua/`)
 
 | File | Notes |
 | --- | --- |
-| `SOURCE-hisn-al-muslim-adhan.mp3` | Hisn al-Muslim — Adhan chapter audio (Qahtani), used as the Arabic source for previews |
-| `from-fajr.mp3` | Dua clipped from `fajr.mp3` at 3:08 (15s) — current default |
+| `SOURCE-hisn-al-muslim-adhan.mp3` | Hisn al-Muslim Adhan chapter audio (Qahtani), used as the Arabic source for previews |
+| `from-fajr.mp3` | Dua clipped from `fajr.mp3` at 3:08 (15s), current default |
 | `with-translation.mp3` | Arabic + English TTS translation (macOS `say` / Samantha) for family learning |
 | `slow-teach.mp3` | Slowed full chapter for teaching |
 | `masjid-wording.mp3` | Arabic preview + English “innaka lā tukhliful-mīʿād” label (scholars differ on this addition) |

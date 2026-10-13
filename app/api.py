@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app import __version__
+from app.audio_slots import OVERRIDE_KEYS, profile_for, slots_summary
 from app.config import (
     AUDIO_DIR,
     BASE_DIR,
@@ -22,6 +23,7 @@ from app.config import (
     update_config,
 )
 from app.dua import get_dua, list_duas
+from app.geocode import reverse_place, search_places, timezone_at
 from app.player import play_adhan, play_boot_sound, play_file, stop_playback
 from app.state import get_state, request_skip, set_mute_until, update_state
 from app.times import check_clock_health, get_today_times
@@ -67,8 +69,14 @@ class ConfigPatch(BaseModel):
     dua_enabled: Optional[bool] = None
     dua_id: Optional[str] = None
     dua_audio_file: Optional[str] = None
+    dua_volume: Optional[int] = Field(default=None, ge=0, le=100)
     dua_delay_seconds: Optional[float] = None
     dua_include_promise: Optional[bool] = None
+    fajr_dua_enabled: Optional[bool] = None
+    fajr_dua_id: Optional[str] = None
+    fajr_dua_audio_file: Optional[str] = None
+    fajr_dua_volume: Optional[int] = Field(default=None, ge=0, le=100)
+    prayer_overrides: Optional[dict[str, dict[str, Any]]] = None
     kahf_enabled: Optional[bool] = None
     kahf_audio_file: Optional[str] = None
     kahf_delay_minutes: Optional[int] = None
@@ -89,10 +97,11 @@ class ConfigPatch(BaseModel):
 
 class PlayRequest(BaseModel):
     kind: str = Field(
-        description="adhan | fajr | dua | kahf | file | test",
+        description="adhan | fajr | dua | fajr_dua | kahf | file | test",
         default="test",
     )
     dua_id: Optional[str] = None
+    prayer: Optional[str] = None
     path: Optional[str] = None
     volume: Optional[int] = Field(default=None, ge=0, le=100)
 
@@ -186,6 +195,30 @@ def api_patch_config(patch: ConfigPatch) -> dict[str, Any]:
             raise HTTPException(400, f"Unknown dua_id: {data['dua_id']}")
         data["dua_audio_file"] = entry["file"]
         data["dua_include_promise"] = entry["variant"] == "with_promise"
+    if "fajr_dua_id" in data and data["fajr_dua_id"]:
+        entry = get_dua(data["fajr_dua_id"])
+        if not entry:
+            raise HTTPException(400, f"Unknown fajr_dua_id: {data['fajr_dua_id']}")
+        data["fajr_dua_audio_file"] = entry["file"]
+    if "prayer_overrides" in data and data["prayer_overrides"] is not None:
+        cleaned: dict[str, dict[str, Any]] = {}
+        for name, raw in data["prayer_overrides"].items():
+            if name not in PRAYER_NAMES:
+                raise HTTPException(400, f"Invalid prayer override: {name}")
+            if raw is None:
+                continue
+            if not isinstance(raw, dict):
+                raise HTTPException(400, f"Override for {name} must be an object")
+            slot = {k: raw[k] for k in OVERRIDE_KEYS if k in raw and raw[k] is not None}
+            if "dua_id" in slot:
+                if not get_dua(slot["dua_id"]):
+                    raise HTTPException(400, f"Unknown dua_id for {name}: {slot['dua_id']}")
+            if "volume" in slot:
+                slot["volume"] = int(slot["volume"])
+            if "dua_volume" in slot:
+                slot["dua_volume"] = int(slot["dua_volume"])
+            cleaned[name] = slot
+        data["prayer_overrides"] = cleaned
     if "enabled_prayers" in data and data["enabled_prayers"] is not None:
         bad = [p for p in data["enabled_prayers"] if p not in PRAYER_NAMES]
         if bad:
@@ -234,7 +267,8 @@ def api_audio_library() -> dict[str, Any]:
                     "bytes": path.stat().st_size,
                 }
             )
-    return {"files": files}
+    cfg = load_config()
+    return {"files": files, "slots": slots_summary(cfg)}
 
 
 def _bg(fn, *args, **kwargs) -> None:
@@ -254,20 +288,23 @@ def api_play(req: PlayRequest) -> dict[str, Any]:
         _bg(play_boot_sound, cfg)
         return {"ok": True, "playing": "boot"}
     if kind == "adhan":
+        prayer = req.prayer or "Dhuhr"
+        slot = profile_for(prayer, cfg)
         _bg(
             play_file,
-            cfg.get("audio_file", "audio/adhan.mp3"),
-            label="Adhan preview",
-            volume=vol,
+            slot["adhan_file"],
+            label=f"{prayer} adhan preview",
+            volume=vol if vol is not None else slot["adhan_volume"],
             config=cfg,
         )
-        return {"ok": True, "playing": "adhan"}
-    if kind == "fajr":
+        return {"ok": True, "playing": "adhan", "prayer": prayer}
+    if kind in {"fajr", "fajr_adhan", "fajr-adhan"}:
+        slot = profile_for("Fajr", cfg)
         _bg(
             play_file,
-            cfg.get("fajr_audio_file", "audio/fajr.mp3"),
+            slot["adhan_file"],
             label="Fajr adhan preview",
-            volume=vol if vol is not None else cfg.get("fajr_volume"),
+            volume=vol if vol is not None else slot["adhan_volume"],
             config=cfg,
         )
         return {"ok": True, "playing": "fajr"}
@@ -281,19 +318,22 @@ def api_play(req: PlayRequest) -> dict[str, Any]:
             timeout=120,
         )
         return {"ok": True, "playing": "kahf"}
-    if kind == "dua":
-        dua_id = req.dua_id or cfg.get("dua_id")
+    if kind in {"dua", "fajr_dua", "fajr-dua"}:
+        is_fajr_dua = kind in {"fajr_dua", "fajr-dua"}
+        slot = profile_for("Fajr" if is_fajr_dua else "Dhuhr", cfg)
+        dua_id = req.dua_id or slot.get("dua_id") or cfg.get("dua_id")
         entry = get_dua(dua_id) if dua_id else None
         if not entry or not entry["available"]:
             raise HTTPException(404, f"Dua not available: {dua_id}")
+        dua_vol = vol if vol is not None else slot["dua_volume"]
         _bg(
             play_file,
             entry["file"],
             label=f"Dua: {entry['title']}",
-            volume=vol,
+            volume=dua_vol,
             config=cfg,
         )
-        return {"ok": True, "playing": entry["id"]}
+        return {"ok": True, "playing": entry["id"], "slot": "fajr_dua" if is_fajr_dua else "dua"}
     if kind == "file":
         if not req.path:
             raise HTTPException(400, "path required for kind=file")
@@ -342,8 +382,41 @@ def api_logs(lines: int = 40) -> dict[str, Any]:
     return {"lines": _tail_log(max(1, min(lines, 500)))}
 
 
+@router.get("/geocode/search")
+def api_geocode_search(q: str = "", limit: int = 6) -> dict[str, Any]:
+    """City/address autocomplete. Proxies OSM Nominatim from the device (avoids browser CORS)."""
+    query = (q or "").strip()
+    if len(query) < 2:
+        return {"ok": True, "offline": False, "query": query, "results": [], "error": None}
+    return search_places(query, limit=limit)
+
+
+@router.get("/geocode/reverse")
+def api_geocode_reverse(lat: float, lon: float) -> dict[str, Any]:
+    """Reverse geocode plus timezone. Timezone still works if Nominatim is offline."""
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "lat/lon out of range")
+    return reverse_place(lat, lon)
+
+
+@router.get("/geocode/timezone")
+def api_geocode_timezone(lat: float, lon: float) -> dict[str, Any]:
+    """Offline IANA timezone from coordinates (no network)."""
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "lat/lon out of range")
+    tz = timezone_at(lat, lon)
+    return {
+        "ok": bool(tz),
+        "latitude": lat,
+        "longitude": lon,
+        "timezone": tz,
+        "error": None if tz else "Could not resolve timezone for that point.",
+    }
+
+
 @router.get("/health")
 def api_health() -> dict[str, Any]:
+
     clock_ok, warning = check_clock_health()
     return {"ok": True, "version": __version__, "clock_ok": clock_ok, "clock_warning": warning}
 
@@ -364,7 +437,7 @@ def api_wifi_networks() -> dict[str, Any]:
 
 @router.post("/wifi/connect")
 def api_wifi_connect(req: WifiConnectRequest) -> dict[str, Any]:
-    """Start joining home Wi‑Fi (async). Poll GET /api/wifi until connect.phase is succeeded|failed."""
+    """Start joining home Wi-Fi (async). Poll GET /api/wifi until connect.phase is succeeded|failed."""
     try:
         status = connect_wifi_async(req.ssid, req.password, hidden=req.hidden)
     except ValueError as e:

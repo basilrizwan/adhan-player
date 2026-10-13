@@ -6,7 +6,7 @@
 set -euo pipefail
 ROOT="${ADHAN_HOME:-$HOME/adhan-player}"
 if [ ! -d "$ROOT" ]; then
-  echo "No $ROOT — cloning..."
+  echo "No $ROOT; cloning..."
   sudo apt-get install -y git python3-venv >/dev/null
   git clone https://github.com/basilrizwan/adhan-player.git "$ROOT"
   cd "$ROOT"

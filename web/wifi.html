@@ -90,7 +90,7 @@
       <p class="lede">You’re on the speaker’s setup Wi‑Fi. Next you’ll pick your home network so the speaker can join it.</p>
       <div class="card">
         <p class="meta" style="margin:0;">
-          If this page didn’t open by itself, that’s okay — you’re in the right place.
+          If this page didn’t open by itself, that’s okay. You’re in the right place.
           The setup network has <strong>no password</strong>.
         </p>
       </div>
@@ -131,7 +131,7 @@
     </section>
 
     <section class="step" data-step="4">
-      <p class="lede" id="doneLede">The speaker is joining your home Wi‑Fi. This phone will disconnect from setup — that’s normal.</p>
+      <p class="lede" id="doneLede">The speaker is joining your home Wi-Fi. This phone will disconnect from setup; that’s normal.</p>
       <div class="card">
         <p class="meta" id="doneSteps" style="margin:0;">
           1. Open this phone’s Wi‑Fi settings<br />
@@ -204,9 +204,18 @@
       try {
         const data = await api("/api/wifi/networks");
         const nets = data.networks || [];
+        const src = (data.wifi && data.wifi.scan && data.wifi.scan.source) || "";
+        const oldNote = document.getElementById("scanCacheNote");
+        if (oldNote) oldNote.remove();
         if (!nets.length) {
-          list.innerHTML = `<p class="meta">No list yet — type your home Wi‑Fi name below. It still works.</p>`;
+          list.innerHTML = `<p class="meta">No list yet. Type your home Wi-Fi name below. It still works.</p>`;
           return;
+        }
+        if (src === "cache") {
+          list.insertAdjacentHTML(
+            "beforebegin",
+            `<p class="meta" id="scanCacheNote">Showing networks seen before the setup hotspot started (the radio often cannot scan while it is an access point).</p>`
+          );
         }
         list.innerHTML = nets
           .slice(0, 20)
@@ -287,7 +296,7 @@
               break;
             }
           } catch (_) {
-            $("doneLede").textContent = "Setup Wi‑Fi dropped — that’s normal.";
+            $("doneLede").textContent = "Setup Wi-Fi dropped; that’s normal.";
             $("doneStatus").textContent =
               "Join your home Wi‑Fi on this phone, then open http://adhan.local";
             break;

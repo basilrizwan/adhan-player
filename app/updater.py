@@ -73,7 +73,7 @@ def git_status_snapshot() -> dict[str, Any]:
         "update_at_midnight": cfg.get("update_at_midnight", True),
     }
     if not _is_git_repo():
-        out["note"] = "Not a git checkout yet — first apply will clone from GitHub."
+        out["note"] = "Not a git checkout yet; first apply will clone from GitHub."
         return out
     try:
         out["local_commit"] = _git("rev-parse", "HEAD")
@@ -262,7 +262,7 @@ def _maybe_apply(reason: str) -> None:
         pass
     st = check_for_updates()
     if st.get("update_available"):
-        log.info("Update available (%s) — applying", reason)
+        log.info("Update available (%s); applying", reason)
         apply_update(unattended=True)
     else:
         log.info("No update (%s)", reason)

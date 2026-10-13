@@ -1,7 +1,8 @@
 [Unit]
 Description=Adhan Prayer Time Player (local portal + scheduler)
-After=network-online.target sound.target avahi-daemon.service
-Wants=network-online.target avahi-daemon.service
+# Do not wait for network-online: first-boot hotspot must start while offline.
+After=NetworkManager.service sound.target avahi-daemon.service
+Wants=NetworkManager.service avahi-daemon.service
 
 [Service]
 Type=simple
@@ -16,7 +17,7 @@ Environment=PYTHONUNBUFFERED=1
 
 # Allow sleep/wake power management (optional advanced mode)
 AmbientCapabilities=CAP_SYS_ADMIN
-SupplementaryGroups=audio
+SupplementaryGroups=audio netdev
 
 [Install]
 WantedBy=multi-user.target

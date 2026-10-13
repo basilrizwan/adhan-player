@@ -42,7 +42,7 @@ print("1" if c.get("auto_update", True) is False else "0")
 PY
 )
     if [ "$SKIP" = "1" ]; then
-      log "auto_update is false — skipping unattended update"
+      log "auto_update is false; skipping unattended update"
       exit 0
     fi
   fi

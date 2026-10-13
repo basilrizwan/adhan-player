@@ -58,7 +58,7 @@ export default function App() {
       <View style={styles.hero}>
         <Text style={styles.brand}>Adhan Companion</Text>
         <Text style={styles.lede}>
-          Opens the portal on your Adhan Player. Same Wi‑Fi required — no cloud account.
+          Opens the portal on your Adhan Player. Same Wi-Fi required, no cloud account.
         </Text>
 
         <Text style={styles.label}>Device URL or IP</Text>

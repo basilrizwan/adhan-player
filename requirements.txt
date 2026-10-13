@@ -4,3 +4,4 @@ adhanpy>=1.0.5
 requests>=2.28.0
 pydantic>=2.0.0
 python-multipart>=0.0.9
+timezonefinder>=6.2.0

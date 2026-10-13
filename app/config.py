@@ -57,8 +57,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "dua_enabled": True,
     "dua_id": "from-fajr",
     "dua_audio_file": "audio/dua/from-fajr.mp3",
+    "dua_volume": 80,
     "dua_delay_seconds": 2,
     "dua_include_promise": False,
+    "fajr_dua_enabled": True,
+    "fajr_dua_id": "from-fajr",
+    "fajr_dua_audio_file": "audio/dua/from-fajr.mp3",
+    "fajr_dua_volume": 50,
+    "prayer_overrides": {},
     "kahf_enabled": False,
     "kahf_audio_file": "audio/kahf.mp3",
     "kahf_delay_minutes": 30,
@@ -83,14 +89,17 @@ _listeners: list = []
 
 def migrate_config(data: dict[str, Any]) -> dict[str, Any]:
     """Fill missing keys from defaults without wiping user values."""
+    original = data or {}
     merged = deepcopy(DEFAULT_CONFIG)
-    merged.update(data or {})
+    merged.update(original)
     # Product default: sleep off so the portal stays reachable
-    if "sleep_enabled" not in data:
+    if "sleep_enabled" not in original:
         merged["sleep_enabled"] = False
-    if "setup_complete" not in data and data.get("location_name"):
+    if "setup_complete" not in original and original.get("location_name"):
         merged["setup_complete"] = True
-    return merged
+    from app.audio_slots import migrate_audio_slots
+
+    return migrate_audio_slots(original, merged)
 
 
 def load_config() -> dict[str, Any]:
@@ -132,5 +141,5 @@ def on_config_change(callback) -> None:
 
 
 def public_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Return config safe for the API (no secrets — currently none)."""
+    """Return config safe for the API (no secrets; currently none)."""
     return deepcopy(cfg or load_config())

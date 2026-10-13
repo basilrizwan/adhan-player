@@ -28,7 +28,7 @@ PY
     "$PY" - <<'PY'
 from app.wifi import hotspot_ssid, wifi_status
 print(f"SSID:     {hotspot_ssid()}")
-print(f"Password: (none — open network)")
+print(f"Password: (none, open network)")
 print(f"Setup:    http://10.42.0.1:8080/wifi")
 print(f"LAN:      http://adhan.local:8080")
 print(f"Status:   {wifi_status()}")

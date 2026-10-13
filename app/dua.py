@@ -52,7 +52,7 @@ DUA_CATALOG: list[dict[str, Any]] = [
     {
         "id": "short-authentic",
         "title": "Short authentic",
-        "description": "Arabic only — Bukhari wording (Hisn al-Muslim). Best daily default.",
+        "description": "Arabic only, Bukhari wording (Hisn al-Muslim). Best daily default.",
         "file": "audio/dua/short-authentic.mp3",
         "variant": "bukhari",
         "has_translation": False,
@@ -65,7 +65,7 @@ DUA_CATALOG: list[dict[str, Any]] = [
     {
         "id": "with-translation",
         "title": "With English translation",
-        "description": "Arabic then English — helpful for kids and family learning.",
+        "description": "Arabic then English, helpful for kids and family learning.",
         "file": "audio/dua/with-translation.mp3",
         "variant": "bukhari",
         "has_translation": True,
@@ -123,13 +123,18 @@ def get_dua(dua_id: str) -> dict[str, Any] | None:
     return None
 
 
-def resolve_dua_path(config: dict[str, Any]) -> Path | None:
-    dua_id = config.get("dua_id")
-    if dua_id:
-        entry = get_dua(dua_id)
+def resolve_dua_path(config: dict[str, Any], dua_id: str | None = None) -> Path | None:
+    """Resolve a dua recording. dua_id selects a catalog entry; otherwise use config."""
+    chosen = dua_id or config.get("dua_id")
+    if chosen:
+        entry = get_dua(chosen)
         if entry and entry["available"]:
             return BASE_DIR / entry["file"]
-    audio_file = config.get("dua_audio_file")
+    audio_file = None
+    if dua_id and dua_id == config.get("fajr_dua_id"):
+        audio_file = config.get("fajr_dua_audio_file")
+    if not audio_file:
+        audio_file = config.get("dua_audio_file")
     if audio_file:
         path = BASE_DIR / audio_file
         if path.exists():

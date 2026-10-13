@@ -1,4 +1,4 @@
-# Agent instructions — Adhan Player
+# Agent instructions: Adhan Player
 
 You are helping a user configure a **local Adhan Player** on their network.
 The device is a Raspberry Pi (or compatible) running a FastAPI app on port **8080**.
@@ -39,12 +39,14 @@ curl -s http://adhan.local:8080/api/update -X POST -H 'Content-Type: application
 
 ## Typical setup flow
 
-1. `GET /api/status` — check `setup_complete`, clock health, URLs
-2. `GET /api/duas` — list post-adhan dua options
-3. `POST /api/play` with `{"kind":"dua","dua_id":"..."}` so the user can hear options on the speaker
-4. `PATCH /api/config` with location, method, volumes, selected `dua_id`, `setup_complete: true`
-5. `GET /api/schedule` — confirm today’s times look right
-6. Optional: `POST /api/play` `{"kind":"test"}` for a full adhan+dua test
+1. `GET /api/status` to check `setup_complete`, clock health, URLs
+2. `GET /api/duas` to list post-adhan dua options
+3. `GET /api/geocode/search?q=City` for location suggestions (fills lat/lon/timezone)
+4. `POST /api/play` with `{"kind":"dua","dua_id":"..."}` so the user can hear options on the speaker
+5. `PATCH /api/config` with location, method, volumes, selected `dua_id` / `fajr_dua_id`, `setup_complete: true`
+6. `GET /api/schedule` to confirm today’s times look right
+7. Optional: `POST /api/play` `{"kind":"test"}` for a full adhan+dua test
+   Also `{"kind":"fajr"}` and `{"kind":"fajr_dua"}` for Fajr slots.
 
 ## Config fields that matter
 
@@ -54,8 +56,11 @@ curl -s http://adhan.local:8080/api/update -X POST -H 'Content-Type: application
 | `location_name` | Display name |
 | `method` | Calculation method (2 = ISNA) |
 | `school` | 0 standard Asr, 1 Hanafi |
-| `volume`, `fajr_volume` | 0–100 |
-| `dua_enabled`, `dua_id` | Post-adhan dua |
+| `volume`, `fajr_volume` | Regular / Fajr adhan volume 0-100 |
+| `audio_file`, `fajr_audio_file` | Regular / Fajr adhan recordings |
+| `dua_enabled`, `dua_id`, `dua_volume` | Regular post-adhan dua |
+| `fajr_dua_enabled`, `fajr_dua_id`, `fajr_dua_volume` | Fajr post-adhan dua (migrates from regular dua) |
+| `prayer_overrides` | Optional per-prayer file/volume/dua |
 | `enabled_prayers` | Subset of Fajr/Dhuhr/Asr/Maghrib/Isha |
 | `audio_output` | auto / hdmi / headphone |
 | `sleep_enabled` | Advanced; disables portal while asleep |

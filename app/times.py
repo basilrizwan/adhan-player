@@ -1,4 +1,4 @@
-"""Prayer-time calculation — offline via adhanpy, optional Aladhan refresh."""
+"""Prayer-time calculation: offline via adhanpy, optional Aladhan refresh."""
 
 from __future__ import annotations
 
@@ -152,7 +152,7 @@ def midnight_refresh(config: dict[str, Any]) -> None:
 
 
 def check_clock_health() -> tuple[bool, str | None]:
-    """Pi has no RTC — flag obviously wrong clocks."""
+    """Pi has no RTC; flag obviously wrong clocks."""
     now = datetime.now()
     if now.year < 2025:
         return False, "System clock looks wrong (before 2025). Check NTP / internet time sync."
