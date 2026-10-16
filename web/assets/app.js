@@ -868,6 +868,36 @@
   const kahfEl = $("#kahfEnabled");
   if (kahfEl) kahfEl.addEventListener("change", renderKahfHint);
 
+  const btnUploadKahf = $("#btnUploadKahf");
+  if (btnUploadKahf) {
+    btnUploadKahf.onclick = async () => {
+      const file = $("#kahfFile").files[0];
+      const status = $("#kahfUploadStatus");
+      if (!file) {
+        status.textContent = "Choose an MP3 first.";
+        return;
+      }
+      const body = new FormData();
+      body.append("target", "kahf");
+      body.append("file", file);
+      btnUploadKahf.disabled = true;
+      status.textContent = `Uploading ${file.name}…`;
+      try {
+        // Not api(): it forces a JSON content type, which breaks multipart.
+        const res = await fetch("/api/audio/upload", { method: "POST", body });
+        if (!res.ok) throw new Error((await res.text()) || res.statusText);
+        const out = await res.json();
+        status.textContent = `Uploaded (${(out.bytes / 1048576).toFixed(1)} MB).`;
+        $("#kahfFile").value = "";
+        await refresh();
+      } catch (e) {
+        status.textContent = `Upload failed: ${e.message}`;
+      } finally {
+        btnUploadKahf.disabled = false;
+      }
+    };
+  }
+
   const btnPreviewBoot = $("#btnPreviewBoot");
   if (btnPreviewBoot) {
     btnPreviewBoot.onclick = async () => {
