@@ -167,3 +167,36 @@ def test_concurrent_config_saves(tmp_config):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(save, range(24)))
     assert all(r.status_code == 200 for r in results)
+
+
+def test_audio_upload_writes_kahf(tmp_config, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.api.BASE_DIR", tmp_path)
+    client = TestClient(app)
+    data = b"ID3" + b"\x00" * 5000
+    res = client.post(
+        "/api/audio/upload",
+        data={"target": "kahf"},
+        files={"file": ("kahf.mp3", data, "audio/mpeg")},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["bytes"] == len(data)
+    assert (tmp_path / "audio" / "kahf.mp3").read_bytes() == data
+    assert not list((tmp_path / "audio").glob(".*.upload"))
+
+
+def test_audio_upload_rejects_unknown_target_and_non_mp3(tmp_config, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.api.BASE_DIR", tmp_path)
+    client = TestClient(app)
+    res = client.post(
+        "/api/audio/upload",
+        data={"target": "../config.json"},
+        files={"file": ("x.mp3", b"ID3data", "audio/mpeg")},
+    )
+    assert res.status_code == 400
+    res = client.post(
+        "/api/audio/upload",
+        data={"target": "kahf"},
+        files={"file": ("x.mp3", b"<html>not audio", "audio/mpeg")},
+    )
+    assert res.status_code == 400
+    assert not (tmp_path / "audio" / "kahf.mp3").exists()

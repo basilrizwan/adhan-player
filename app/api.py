@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from app import __version__
@@ -297,6 +297,43 @@ def api_audio_library() -> dict[str, Any]:
             )
     cfg = load_config()
     return {"files": files, "slots": slots_summary(cfg)}
+
+
+# Uploads land only at these fixed paths. scripts/update.sh preserves audio/,
+# so an uploaded recording survives GitHub updates.
+UPLOAD_TARGETS = {"kahf": "audio/kahf.mp3"}
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
+def _looks_like_mp3(head: bytes) -> bool:
+    return head.startswith(b"ID3") or (len(head) >= 2 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0)
+
+
+@router.post("/audio/upload")
+def api_audio_upload(target: str = Form(...), file: UploadFile = File(...)) -> dict[str, Any]:
+    rel = UPLOAD_TARGETS.get(target)
+    if not rel:
+        raise HTTPException(400, f"Unknown upload target: {target}")
+    head = file.file.read(4)
+    if not _looks_like_mp3(head):
+        raise HTTPException(400, "File is not an MP3")
+    dest = BASE_DIR / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{dest.name}.upload")
+    size = len(head)
+    try:
+        with open(tmp, "wb") as out:
+            out.write(head)
+            while chunk := file.file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "File is larger than 200 MB")
+                out.write(chunk)
+        # Atomic swap: a cut-off upload never replaces the working file.
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"ok": True, "target": target, "path": rel, "bytes": size}
 
 
 def _bg(fn, *args, **kwargs) -> None:

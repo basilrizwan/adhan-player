@@ -1,6 +1,6 @@
 #!/bin/bash
 # Update Adhan Player from the public GitHub repo.
-# Preserves config.json, cache/, and local audio that isn't in git.
+# Preserves config.json, cache/, and everything under audio/.
 #
 # Usage:
 #   ./scripts/update.sh           # fetch + apply if behind
@@ -80,18 +80,45 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
   exit 2
 fi
 
-# Preserve user state before any checkout/reset
+# User-owned state: settings plus every recording under audio/. The user's copy
+# always wins over the repo's, so an update never replaces a chosen adhan, dua
+# clip, or Kahf file. New files the repo adds still arrive.
 STASH="$ROOT/cache/.update-stash"
-mkdir -p "$STASH"
-for keep in config.json audio/adhan.mp3 audio/fajr.mp3 audio/kahf.mp3; do
-  if [ -e "$ROOT/$keep" ]; then
-    mkdir -p "$STASH/$(dirname "$keep")"
-    cp -a "$ROOT/$keep" "$STASH/$keep"
+# Present only while the tree is reset but not yet restored. If a run dies in
+# that window, the stash is the only good copy and the next run must restore it
+# rather than re-stash the reset files over it.
+MARKER="$STASH/.reset-in-progress"
+
+stash_user_files() {
+  rm -rf "$STASH"
+  mkdir -p "$STASH"
+  [ -e "$ROOT/config.json" ] && cp -a "$ROOT/config.json" "$STASH/config.json"
+  [ -d "$ROOT/audio" ] && cp -a "$ROOT/audio" "$STASH/audio"
+  return 0
+}
+
+restore_user_files() {
+  if [ -e "$STASH/config.json" ]; then
+    cp -a "$STASH/config.json" "$ROOT/config.json"
+    log "Restored config.json"
   fi
-done
+  if [ -d "$STASH/audio" ]; then
+    mkdir -p "$ROOT/audio"
+    cp -a "$STASH/audio/." "$ROOT/audio/"
+    log "Restored audio/"
+  fi
+  rm -rf "$STASH"
+}
+
+if [ -f "$MARKER" ]; then
+  log "Previous update was interrupted; restoring saved user files first"
+  restore_user_files
+fi
 
 # First-time: fetch + checkout (SD copy → git tree)
 if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+  stash_user_files
+  touch "$MARKER"
   git fetch --depth=1 origin "$BRANCH"
   git checkout -f -B "$BRANCH" "origin/$BRANCH"
   log "Git checkout created on $BRANCH"
@@ -106,23 +133,19 @@ log "remote $REMOTE"
 
 if [ "$LOCAL" = "$REMOTE" ] && [ "$FORCE" -eq 0 ]; then
   log "Already up to date."
-  rm -rf "$STASH"
+  # The first-time checkout above may have overwritten user files.
+  [ -f "$MARKER" ] && restore_user_files
   exit 0
 fi
 
+[ -f "$MARKER" ] || stash_user_files
+touch "$MARKER"
+
 log "Resetting to origin/$BRANCH ..."
 git reset --hard "origin/$BRANCH"
-git clean -fd -e cache -e venv -e audio/kahf.mp3 -e audio/adhan.prev.mp3 -e audio/candidates
+git clean -fd -e cache -e venv -e audio
 
-# Restore user files
-for keep in config.json audio/adhan.mp3 audio/fajr.mp3 audio/kahf.mp3; do
-  if [ -e "$STASH/$keep" ]; then
-    mkdir -p "$(dirname "$ROOT/$keep")"
-    cp -a "$STASH/$keep" "$ROOT/$keep"
-    log "Restored $keep"
-  fi
-done
-rm -rf "$STASH"
+restore_user_files
 
 # Dependencies
 if [ -x "$ROOT/venv/bin/pip" ]; then

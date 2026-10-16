@@ -1,6 +1,6 @@
 /* Minimal offline shell for the local portal */
 const CACHE = "adhan-shell-v5";
-const ASSETS = ["/", "/assets/styles.css?v=1.3.1", "/assets/app.js?v=1.3.1", "/manifest.json"];
+const ASSETS = ["/", "/assets/styles.css?v=1.3.2", "/assets/app.js?v=1.3.2", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
