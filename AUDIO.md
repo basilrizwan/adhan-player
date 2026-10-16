@@ -10,7 +10,11 @@ Bundled media is for personal / da‘wah use with the Adhan Player. Replace any 
 
 ## Surah Kahf
 
-- `audio/kahf.mp3`: user-provided / local copy used by the Thursday Maghrib feature.
+- `audio/kahf.mp3`: user-provided / local copy used by the Thursday Maghrib feature. Upload it from the portal (Advanced → Surah Kahf recording).
+
+## Updates keep your audio
+
+`scripts/update.sh` keeps `config.json` and every file under `audio/` across GitHub updates. The speaker's copy wins over the repo's, so a replaced adhan or dua clip is never overwritten. New files added to the repo still arrive.
 
 ## Post-adhan dua (`audio/dua/`)
 
