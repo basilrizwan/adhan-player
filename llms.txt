@@ -54,7 +54,7 @@ Then the phone rejoins home Wi‑Fi and uses `http://adhan.local:8080`.
 
 ## Updates
 
-Devices pull `main` from `https://github.com/basilrizwan/adhan-player.git` on boot (~90s after start) and around 00:08 local time. Settings (`config.json`) and custom adhan files are preserved.
+Devices pull `main` from `https://github.com/basilrizwan/adhan-player.git` on boot (~90s after start) and around 00:08 local time. Settings (`config.json`, gitignored, defaults in `app/config.py`) and custom adhan files are preserved.
 
 ```bash
 curl -s http://adhan.local:8080/api/update

@@ -122,6 +122,26 @@ def test_interrupted_update_is_recovered_on_next_run(repos):
     assert_user_state_intact(device)
 
 
+def test_update_that_untracks_config_keeps_user_settings(repos):
+    origin, device = repos
+    # The repo stops tracking config.json; git deletes it on the device during reset.
+    git(origin, "rm", "-q", "--cached", "config.json")
+    (origin / "config.json").unlink()
+    commit_files(origin, {".gitignore": b"cache/\naudio/kahf.mp3\nconfig.json\n"}, "untrack config")
+
+    res = run_update(device, origin)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert git(device, "ls-files", "config.json") == ""
+    assert_user_state_intact(device)
+
+    # Later updates leave the now-ignored file alone.
+    commit_files(origin, {"app.py": b"print('v3')\n"}, "v3")
+    res = run_update(device, origin)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert_user_state_intact(device)
+
+
 def test_first_time_sd_copy_keeps_user_files(repos, tmp_path):
     origin, device = repos
     shutil.rmtree(device / ".git")

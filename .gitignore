@@ -20,3 +20,7 @@ audio/fajr.full.mp3
 audio/adhan.prev.mp3
 audio/candidates/
 audio/*.wav
+
+# Per-device settings (written by the portal). Defaults live in app/config.py.
+config.json
+config.tmp
