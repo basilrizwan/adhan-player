@@ -107,7 +107,7 @@ curl -s http://adhan.local:8080/api/config -X PATCH \
 - Audio tab: separate Fajr/regular adhan and dua recordings plus volumes (old single settings migrate automatically)
 ## Auto-update
 
-The Pi pulls `main` from [github.com/basilrizwan/adhan-player](https://github.com/basilrizwan/adhan-player) **on boot** (after ~90s) and **around 12:08am** local time. `config.json` and your adhan/fajr/kahf files are kept.
+The Pi pulls `main` from [github.com/basilrizwan/adhan-player](https://github.com/basilrizwan/adhan-player) **on boot** (after ~90s) and **around 12:08am** local time. `config.json` (gitignored; see `config.example.json` for the keys) and your adhan/fajr/kahf files are kept.
 
 Portal → Advanced → **Update now**, or:
 

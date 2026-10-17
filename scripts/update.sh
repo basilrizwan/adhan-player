@@ -1,6 +1,8 @@
 #!/bin/bash
 # Update Adhan Player from the public GitHub repo.
 # Preserves config.json, cache/, and everything under audio/.
+# config.json is gitignored; the stash also covers checkouts made before it was
+# untracked (git deletes it when moving past that commit).
 #
 # Usage:
 #   ./scripts/update.sh           # fetch + apply if behind

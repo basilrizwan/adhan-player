@@ -41,13 +41,14 @@ DEST="$BOOT_VOL/adhan-player"
 rm -rf "$DEST"
 mkdir -p "$DEST"
 
-# Copy project (exclude venv, cache, pyc)
+# Copy project (exclude venv, cache, pyc, and this machine's config.json)
 rsync -a --exclude 'venv' --exclude '__pycache__' --exclude 'cache' --exclude '.git' \
-    --exclude '.DS_Store' --exclude 'mobile/AdhanCompanion/node_modules' \
+    --exclude '.DS_Store' --exclude 'mobile/AdhanCompanion/node_modules' --exclude '/config.json' \
     "$SCRIPT_DIR/" "$DEST/" 2>/dev/null || {
     # Fallback without rsync
     mkdir -p "$DEST/audio/dua" "$DEST/app" "$DEST/web" "$DEST/avahi" "$DEST/scripts" "$DEST/docs"
     cp "$SCRIPT_DIR"/*.py "$SCRIPT_DIR"/*.txt "$SCRIPT_DIR"/*.json "$SCRIPT_DIR"/*.service "$SCRIPT_DIR"/*.sh "$DEST/" 2>/dev/null || true
+    rm -f "$DEST/config.json"
     cp -R "$SCRIPT_DIR/app" "$DEST/"
     cp -R "$SCRIPT_DIR/web" "$DEST/"
     cp -R "$SCRIPT_DIR/avahi" "$DEST/"
