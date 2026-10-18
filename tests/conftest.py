@@ -18,3 +18,13 @@ def tmp_config(tmp_path, monkeypatch):
 
     monkeypatch.setattr(times_mod, "CACHE_DIR", cache)
     return path
+
+
+@pytest.fixture(autouse=True)
+def isolated_played_prayers(tmp_path, monkeypatch):
+    """Never read or write the real cache/played_prayers.json from tests."""
+    from app import player
+
+    path = tmp_path / "played_prayers.json"
+    monkeypatch.setattr(player, "PLAYED_PATH", path)
+    return path

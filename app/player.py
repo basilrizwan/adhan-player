@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import signal
 import subprocess
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from app.audio_slots import profile_for
-from app.config import BASE_DIR, PRAYER_NAMES, load_config, on_config_change
+from app.config import BASE_DIR, CACHE_DIR, PRAYER_NAMES, load_config, on_config_change
 from app.dua import resolve_dua_path
 from app.state import consume_skip, is_muted, update_state
 from app.times import (
@@ -30,6 +31,10 @@ log = logging.getLogger("adhan.player")
 
 SLEEP_AFTER_ADHAN_SECS = 60
 WAKE_BEFORE_PRAYER_SECS = 180
+# Prayers the scheduler already handled, keyed by local date. Survives restarts so a
+# location/timezone change that moves a prayer later can never replay it.
+PLAYED_PATH = CACHE_DIR / "played_prayers.json"
+PLAYED_KEEP_DAYS = 3
 
 _shutdown = threading.Event()
 _reschedule = threading.Event()
@@ -371,10 +376,44 @@ def build_full_schedule(config: dict[str, Any]) -> list[tuple[str, datetime]]:
     return schedule
 
 
+def _load_played() -> dict[str, list[str]]:
+    try:
+        with open(PLAYED_PATH) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        log.warning("Ignoring unreadable %s: %s", PLAYED_PATH.name, e)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def was_played(prayer_name: str, day: date) -> bool:
+    return prayer_name in _load_played().get(day.isoformat(), [])
+
+
+def mark_played(prayer_name: str, day: date) -> None:
+    data = _load_played()
+    names = data.setdefault(day.isoformat(), [])
+    if prayer_name not in names:
+        names.append(prayer_name)
+    cutoff = (day - timedelta(days=PLAYED_KEEP_DAYS)).isoformat()
+    data = {d: n for d, n in data.items() if d >= cutoff}
+    try:
+        PLAYED_PATH.parent.mkdir(exist_ok=True)
+        tmp = PLAYED_PATH.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        tmp.replace(PLAYED_PATH)
+    except OSError as e:
+        log.warning("Could not record %s as played: %s", prayer_name, e)
+
+
 def find_next_prayer(schedule: list[tuple[str, datetime]], config: dict[str, Any]):
     now = local_now(config)
     for name, dt in schedule:
-        if dt > now:
+        if dt > now and not was_played(name, dt.date()):
             return name, dt
     return None, None
 
@@ -461,6 +500,13 @@ def scheduler_loop() -> None:
         config = load_config()
         if prayer_name in PRAYER_NAMES and prayer_name not in config.get("enabled_prayers", PRAYER_NAMES):
             continue
+        prayer_day = prayer_dt.date()
+        if was_played(prayer_name, prayer_day):
+            log.info("%s already played today; not replaying", prayer_name)
+            continue
+        # Mark first: a muted/skipped slot counts as handled, and a crash mid-adhan
+        # must not replay it after restart.
+        mark_played(prayer_name, prayer_day)
 
         if is_muted():
             log.info("Muted; skipping %s", prayer_name)
@@ -470,6 +516,8 @@ def scheduler_loop() -> None:
             continue
 
         play_adhan(prayer_name, config)
+        if _reschedule.is_set():
+            log.info("Settings changed during playback; recalculating schedule")
 
     log.info("Scheduler stopped")
 

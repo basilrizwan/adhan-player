@@ -95,3 +95,107 @@ def test_refresh_schedule_publishes_today_times(tmp_config):
     assert state["today_times"]
     assert "Fajr" in state["today_times"]
     assert isinstance(schedule, list)
+
+
+def _run_scheduler(monkeypatch, configs, schedules, on_play):
+    """Drive the real scheduler_loop with fake config/schedule; on_play records and may stop it."""
+    import threading
+
+    state = {"i": 0}
+    monkeypatch.setattr(player, "load_config", lambda: configs[min(state["i"], len(configs) - 1)])
+    monkeypatch.setattr(
+        player, "build_full_schedule", lambda cfg: schedules[min(state["i"], len(schedules) - 1)]
+    )
+    monkeypatch.setattr(player, "get_today_times", lambda cfg: {})
+
+    def fake_play_adhan(name, cfg):
+        on_play(name)
+        state["i"] += 1
+
+    monkeypatch.setattr(player, "play_adhan", fake_play_adhan)
+    player._shutdown.clear()
+    player._reschedule.clear()
+    t = threading.Thread(target=player.scheduler_loop, daemon=True)
+    t.start()
+    t.join(timeout=10)
+    alive = t.is_alive()
+    player._shutdown.set()
+    t.join(timeout=5)
+    player._shutdown.clear()
+    assert not alive, "scheduler did not stop"
+
+
+def _cfg(tz):
+    return {
+        "latitude": 0,
+        "longitude": 0,
+        "timezone": tz,
+        "method": 2,
+        "enabled_prayers": ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"],
+        "play_on_boot": False,
+        "sleep_enabled": False,
+    }
+
+
+def test_timezone_change_after_maghrib_does_not_replay(monkeypatch, isolated_played_prayers):
+    houston, la = _cfg("America/Chicago"), _cfg("America/Los_Angeles")
+    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+    # Houston Maghrib is due first; after it plays the location flips to San Ramon,
+    # whose Maghrib (same local date) is later. Only Isha should follow.
+    schedules = [
+        [("Maghrib", now + timedelta(seconds=0.3))],
+        [("Maghrib", now + timedelta(seconds=0.8)), ("Isha", now + timedelta(seconds=1.3))],
+    ]
+    played = []
+
+    def on_play(name):
+        played.append(name)
+        if name == "Isha":
+            player._shutdown.set()
+
+    _run_scheduler(monkeypatch, [houston, la], schedules, on_play)
+    assert played == ["Maghrib", "Isha"]
+
+
+def test_restart_after_prayer_does_not_replay(monkeypatch, isolated_played_prayers):
+    cfg = _cfg("America/Los_Angeles")
+    tz = ZoneInfo("America/Los_Angeles")
+    played = []
+
+    def stop_after(name):
+        played.append(name)
+        player._shutdown.set()
+
+    now = datetime.now(tz)
+    _run_scheduler(monkeypatch, [cfg], [[("Asr", now + timedelta(seconds=0.3))]], stop_after)
+    assert played == ["Asr"]
+    assert isolated_played_prayers.exists()
+
+    # Fresh process: only the on-disk record remains, and Asr is (again) in the future.
+    now = datetime.now(tz)
+    schedule = [("Asr", now + timedelta(seconds=0.3)), ("Maghrib", now + timedelta(seconds=0.8))]
+    _run_scheduler(monkeypatch, [cfg], [schedule], stop_after)
+    assert played == ["Asr", "Maghrib"]
+
+
+def test_settings_change_during_playback_is_logged(monkeypatch, caplog):
+    cfg = _cfg("America/Los_Angeles")
+    now = datetime.now(ZoneInfo("America/Los_Angeles"))
+
+    def change_settings_while_playing(name):
+        player._reschedule.set()
+        player._shutdown.set()
+
+    with caplog.at_level("INFO", logger="adhan.player"):
+        _run_scheduler(
+            monkeypatch, [cfg], [[("Dhuhr", now + timedelta(seconds=0.3))]], change_settings_while_playing
+        )
+    assert "Settings changed during playback" in caplog.text
+
+
+def test_played_record_prunes_old_days(isolated_played_prayers):
+    player.mark_played("Fajr", date(2026, 10, 1))
+    player.mark_played("Isha", date(2026, 10, 17))
+    assert player.was_played("Isha", date(2026, 10, 17))
+    assert not player.was_played("Isha", date(2026, 10, 16))
+    assert not player.was_played("Fajr", date(2026, 10, 1))
